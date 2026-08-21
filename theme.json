@@ -1,0 +1,20 @@
+{
+  "id": "window-corner-radius",
+  "name": "Window Corner Radius",
+  "description": "Sets the native macOS window corner radius for Zen Browser.",
+  "version": "1.0.0",
+  "author": "Local",
+  "fork": [
+    "zen"
+  ],
+  "os": [
+    "macos"
+  ],
+  "scripts": {
+    "window-radius.uc.mjs": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ]
+    }
+  }
+}
