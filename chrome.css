@@ -1,0 +1,26 @@
+/* Safari-like Zen Layout — chrome tweaks
+   Pairs with window-radius.uc.mjs, which sets the native macOS window
+   corner radius to 26 (the Tahoe system default). */
+
+/* 1. Outer padding of the sidebar from the window edge. */
+#navigator-toolbox {
+  --zen-compact-float: 22px !important;
+}
+
+/* 2. Sidebar corner radius. */
+:root {
+  --zen-border-radius: 20px !important;
+}
+
+/* 3. Padding inside the sidebar.
+   Same selector Zen uses for the compact-mode titlebar, with explicit
+   per-side values instead of the uniform var(--zen-toolbox-padding). */
+:root[zen-compact-mode="true"]:not([customizing]):not([inDOMFullscreen="true"]) {
+  @media -moz-pref("zen.view.compact.hide-tabbar") or -moz-pref("zen.view.use-single-toolbar") {
+    &:not([zen-compact-animating]) {
+      & #navigator-toolbox:not([animate="true"]) #titlebar {
+        padding: 2px 8px 8px 8px !important;
+      }
+    }
+  }
+}
