@@ -1,7 +1,7 @@
 // Window Corner Radius — macOS / Zen Browser
 // Change this value and reload the mod/restart Zen.
 // Typical values: 10, 15, 20, 26.
-const RADIUS = "10";
+const RADIUS = "26";
 
 if (Services.appinfo.OS === "Darwin") {
   try {
