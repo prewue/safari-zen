@@ -1,3 +1,6 @@
+<img width="635" height="389" alt="image" src="https://github.com/user-attachments/assets/9a5d29a3-008a-4364-a965-4fc103ae28f2" />
+
+
 # Safari-like Zen
 
 A [Sine](https://github.com/CosmoCreeper/Sine) mod that makes Zen Browser feel
