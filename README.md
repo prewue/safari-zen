@@ -7,7 +7,7 @@ reveal animation with a bit of spring to it.
 ## Requirements
 
 - Zen Browser with the Sine mod manager
-- macOS 26 (Tahoe) or newer — only for the native window corners. The sidebar
+- macOS 26 (Tahoe) or newer, only for the native window corners. The sidebar
   styling, blur and animation work on any platform Zen runs on.
 
 ## Install
