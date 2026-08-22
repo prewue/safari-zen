@@ -37,8 +37,8 @@
        That brightness is a dark-mode hardcode — in light mode it crushes the
        sidebar to near-black. Rebuild the filter without it. */
     backdrop-filter:
-      blur(var(--mod-safari-acrylic-blur, 42px))
-      saturate(var(--mod-safari-acrylic-saturation, 140%)) !important;
+      blur(var(--mod-safari-acrylic-blur, 24px))
+      saturate(var(--mod-safari-acrylic-saturation, 150%)) !important;
 
     /* Scale the theme gradient sitting on top of the blur, without breaking
        Zen's workspace crossfade: ::after is the incoming theme and ::before the
@@ -53,6 +53,68 @@
       opacity: calc(
         (1 - var(--zen-background-opacity)) * var(--mod-safari-acrylic-tint, 1)
       ) !important;
+    }
+  }
+}
+
+/* 5. Sidebar reveal animation.
+   Deliberately asymmetric: opening gets a light spring, closing does not.
+   A panel that bounces on the way out reads as a toy, not as polish.
+
+   The open curve is the step response of a damped harmonic oscillator
+   (damping ratio 0.76, response 0.32s), sampled into linear(). It overshoots
+   2.54% — about 8px on a 317px slide — peaking at 54% of the transition, then
+   settles to within 0.33px of the target, so there is no snap at the end.
+   Zen's stock curve overshoots only 0.34%, which reads as flat. */
+
+@media -moz-pref("mod.safari.sidebar-animation") {
+  :root {
+    --safari-open-time: 0.46s;
+    --safari-open-ease: linear(
+      0.0000 0%, 0.0149 2%, 0.0542 4%, 0.1110 6%, 0.1795 8%, 0.2549 10%,
+      0.3334 12%, 0.4120 14%, 0.4884 16%, 0.5611 18%, 0.6288 20%,
+      0.6908 22%, 0.7467 24%, 0.7965 26%, 0.8400 28%, 0.8777 30%,
+      0.9098 32%, 0.9367 34%, 0.9590 36%, 0.9771 38%, 0.9915 40%,
+      1.0027 42%, 1.0111 44%, 1.0172 46%, 1.0213 48%, 1.0239 50%,
+      1.0251 52%, 1.0254 54%, 1.0248 56%, 1.0237 58%, 1.0222 60%,
+      1.0204 62%, 1.0184 64%, 1.0164 66%, 1.0145 68%, 1.0125 70%,
+      1.0107 72%, 1.0090 74%, 1.0075 76%, 1.0061 78%, 1.0049 80%,
+      1.0038 82%, 1.0029 84%, 1.0021 86%, 1.0015 88%, 1.0009 90%,
+      1.0005 92%, 1.0001 94%, 0.9999 96%, 0.9997 98%, 1.0000 100%
+    );
+    --safari-close-time: 0.19s;
+    --safari-close-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  /* Closing. Lower specificity than the opening rule below, so that one wins
+     while the sidebar is revealed. */
+  #navigator-toolbox:not([animate="true"]) {
+    transition:
+      left var(--safari-close-time) var(--safari-close-ease),
+      right var(--safari-close-time) var(--safari-close-ease),
+      visibility var(--safari-close-time) var(--safari-close-ease) !important;
+  }
+
+  /* Opening. Same trigger set Zen uses; visibility is intentionally left out
+     so the panel is on screen for the whole slide. */
+  #navigator-toolbox:is(
+      [zen-has-hover], [zen-user-show], [zen-has-empty-tab], [flash-popup],
+      [has-popup-menu], [movingtab], [zen-compact-mode-active]
+    ):not([animate="true"]) {
+    transition:
+      left var(--safari-open-time) var(--safari-open-ease),
+      right var(--safari-open-time) var(--safari-open-ease) !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #navigator-toolbox:not([animate="true"]),
+    #navigator-toolbox:is(
+        [zen-has-hover], [zen-user-show], [zen-has-empty-tab], [flash-popup],
+        [has-popup-menu], [movingtab], [zen-compact-mode-active]
+      ):not([animate="true"]) {
+      transition:
+        left 0.12s ease-out,
+        right 0.12s ease-out !important;
     }
   }
 }

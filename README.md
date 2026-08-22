@@ -1,109 +1,81 @@
-# Safari-like Zen Layout — Sine mod
+# Safari-like Zen
 
-A local Sine mod for Zen Browser on macOS. It makes Zen's chrome read closer to
-Safari: native macOS window corners, a natively translucent sidebar, plus
-sidebar rounding and padding tweaks.
+A [Sine](https://github.com/CosmoCreeper/Sine) mod that makes Zen Browser feel
+like Safari on macOS native window corners, a translucent sidebar, and a
+reveal animation with a bit of spring to it.
 
-## What it changes
+## Requirements
 
-**Window corner radius** (`window-radius.uc.mjs`) — runs:
+- Zen Browser with the Sine mod manager
+- macOS 26 (Tahoe) or newer — only for the native window corners. The sidebar
+  styling, blur and animation work on any platform Zen runs on.
 
-`/usr/bin/defaults write app.zen-browser.zen NSConvolutionOverride1 -float 26`
+## Install
 
-Change `RADIUS` in `window-radius.uc.mjs` to adjust it. After changing the
-value, fully quit Zen (⌘Q) and reopen it.
+In Zen, open **Settings**, add a mod from GitHub and paste:
 
-Suggested values:
-- 26 — the macOS Tahoe system default (see below)
-- 20 — slightly less rounded
-- 15 — noticeably less rounded
-- 10 — strongly reduced
-- 0.1 — nearly square
+```
+prewue/safari-zen
+```
 
-**Translucent sidebar** — turns on Zen's own `zen.theme.acrylic-elements` and
-retunes it. See the next section.
+Then fully quit Zen (**⌘Q**) and reopen it.
 
-**Chrome CSS** (`chrome.css`):
-- `--zen-compact-float: 22px` on `#navigator-toolbox` — outer padding of the
-  sidebar from the window edge.
-- `--zen-border-radius: 20px` — sidebar corner radius.
-- `padding: 2px 8px 8px 8px` on the compact-mode `#titlebar`, replacing Zen's
-  uniform `var(--zen-toolbox-padding)`, using the same selector Zen ships.
+## Features
 
-## Translucent sidebar
+**Native window corners.** Rounds the browser window using macOS's own window
+shape, so Zen matches Safari and every other native app instead of drawing its
+own approximation. macOS only.
 
-The transparency itself is **Zen's native path**, not a CSS reimplementation.
-`zen.theme.acrylic-elements` is Zen's own switch, and this mod just exposes it
-in the settings and fixes its rough edges.
+**Translucent sidebar.** Turns on Zen's built-in translucency and blurs whatever
+sits behind the sidebar. Your workspace theme is kept — a gradient stays a
+gradient, just softer — and switching workspaces still cross-fades normally.
 
-What Zen does when it is on:
+**Safari-like sidebar shape.** The sidebar floats 22px from the window edge with
+a 20px corner radius and tighter internal padding, so it reads as a panel rather
+than a docked strip.
 
-- `ZenGradientGenerator.mjs` returns the sidebar's base colour at **0.6 alpha
-  instead of opaque**, so your theme is recomputed translucent rather than
-  discarded — a gradient stays a gradient.
-- `zen-compact-mode.css` swaps `#zen-toolbar-background` to a transparent
-  background with `backdrop-filter: blur(42px) saturate(110%) brightness(0.25)
-  contrast(100%)`.
+**Spring reveal animation.** Hovering the edge slides the sidebar in with a
+light spring that overshoots slightly and settles. Closing is quicker and
+doesn't bounce. Respects the system "reduce motion" setting.
 
-Two problems with the stock version, both handled here:
+## Settings
 
-1. That `brightness(0.25)` is a **dark-mode hardcode** — in light mode it
-   crushes the sidebar to near-black. `mod.safari.acrylic-tune` rebuilds the
-   filter without it and makes blur and saturation configurable.
-2. Naively overriding the tint breaks Zen's workspace crossfade. The tint is
-   scaled through `--zen-background-opacity` so the incoming (`::after`) and
-   outgoing (`::before`) theme layers keep summing correctly.
+Open **Settings → Mods → Safari-like Zen**.
 
-**`zen.theme.acrylic-elements` is read once at startup**, in a field
-initialiser on `ZenGradientGenerator`. Toggling it at runtime updates the CSS
-but not the recomputed theme colours, which leaves the sidebar opaque with no
-way to toggle back. Always **fully quit Zen (⌘Q)** after changing it.
-
-### Settings
-
-| Pref | Default | What it does |
+| Setting | Default | What it does |
 |---|---|---|
-| `zen.theme.acrylic-elements` | on | Zen's native translucent sidebar (**restart required**) |
-| `mod.safari.acrylic-tune` | on | Rebuild Zen's filter without the dark-only brightness |
-| `mod.safari.acrylic-blur` | `42px` | Blur radius |
-| `mod.safari.acrylic-saturation` | `140%` | Blur saturation |
-| `mod.safari.acrylic-tint` | `1` | How much of the theme gradient stays on top |
+| Native translucent sidebar | On | Makes the sidebar see-through |
+| Blur Sidebar Background (Acryllic Filter) | On | Blurs what's behind the sidebar |
+| Sidebar blur radius | `24px` | How soft the blur is |
+| Sidebar blur saturation | `150%` | How vivid colours stay through the blur |
+| Theme gradient on top of the blur | `1` | How much of your theme colour shows, `0`–`1` |
+| Custom window corner radius | On | Rounds the window corners (macOS only) |
+| Premium sidebar reveal animation | On | The spring slide-in |
 
-### Why not real Liquid Glass
+Two of these — **Native translucent sidebar** and **Custom window corner
+radius** — are only applied at startup. After changing either one, fully quit
+Zen (**⌘Q**) and reopen it.
 
-A native `NSGlassEffectView` can be created and placed correctly under Zen's
-`ChildView` from chrome JS, but it can never be seen: Gecko composites its
-surface with **alpha = 255 everywhere**, verified by sampling a live window's
-alpha channel. Surface transparency is decided by the widget's transparency
-mode in `nsCocoaWindow` at window creation, which a mod cannot reach. Zen's
-acrylic path is the workable route.
+**Custom window corner radius** is macOS only and does nothing on other
+platforms.
 
-## Reset
+To change how round the window corners are, edit `RADIUS` in
+`window-radius.uc.mjs`. Useful values are `26`, `20`, `15` and `10`.
 
-To reset the window radius to the macOS default, disable/remove the mod and run:
+## Uninstall
 
-`defaults delete app.zen-browser.zen NSConvolutionOverride1`
+Remove the mod in **Settings → Mods**. On macOS, run this once in Terminal to
+restore the default window corners:
 
-Note: this mod executes `/usr/bin/defaults` from privileged browser JS. Install
-only if you trust the code.
+```sh
+defaults delete app.zen-browser.zen NSConvolutionOverride1
+```
 
-## What the corner radius key actually does
+## Note
 
-Measured on macOS 26.5 (Tahoe) by screenshotting real windows with alpha and
-fitting the corner curve:
+On macOS this mod runs `/usr/bin/defaults` from privileged browser code in order
+to set the window corner radius. Install it only if you're happy with that.
 
-- The corner AppKit draws is **already Apple's `.continuous` squircle**, not a
-  circular arc. Fitting the captured curve against
-  `CGPathCreateWithContinuousRoundedRect` vs `CGPathCreateWithRoundedRect`:
-  continuous wins at every radius (at r=26: rms 0.07pt vs 0.21pt, max error
-  0.32pt vs 1.13pt). `NSConvolutionOverride1` only scales that curve — it does
-  not switch the shape.
-- The corner spans `1.528665 × radius` along each edge — exactly
-  `kCACornerCurveContinuous`, AppKit's continuous-corner expansion factor.
-- **26 is the system default.** Craft and Telegram have no
-  `NSConvolutionOverride1` set and measure identically to a window forced to 26.
-  Zen is built against SDK 26.5, so it gets the same default. Setting 26 here is
-  therefore a no-op that just pins the default explicitly; use a different value
-  if you actually want to deviate.
-- `NSConvolutionOverride2` exists in AppKit but has no observable effect on
-  window corners (tested 0, 1, 26, 60 — radius and curve unchanged).
+---
+
+Implementation details, measurements and research notes live in [DEV.md](DEV.md).

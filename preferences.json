@@ -7,7 +7,7 @@
   },
   {
     "property": "mod.safari.acrylic-tune",
-    "label": "🎨 Retune Zen's acrylic filter (drops its dark-only brightness)",
+    "label": "🎨 Blur Sidebar Background (Acryllic Filter)",
     "type": "checkbox",
     "defaultValue": true
   },
@@ -15,15 +15,15 @@
     "property": "mod.safari.acrylic-blur",
     "label": "🌫️ Sidebar blur radius",
     "type": "string",
-    "defaultValue": "42px",
-    "placeholder": "42px"
+    "defaultValue": "24px",
+    "placeholder": "24px"
   },
   {
     "property": "mod.safari.acrylic-saturation",
     "label": "🎨 Sidebar blur saturation",
     "type": "string",
-    "defaultValue": "140%",
-    "placeholder": "140%"
+    "defaultValue": "150%",
+    "placeholder": "150%"
   },
   {
     "property": "mod.safari.acrylic-tint",
@@ -31,5 +31,17 @@
     "type": "string",
     "defaultValue": "1",
     "placeholder": "1"
+  },
+  {
+    "property": "mod.safari.window-radius",
+    "label": "🖥️ Custom window corner radius (macOS only — needs a restart)",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "property": "mod.safari.sidebar-animation",
+    "label": "✨ Premium sidebar reveal animation (light spring)",
+    "type": "checkbox",
+    "defaultValue": true
   }
 ]
