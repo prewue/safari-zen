@@ -65,7 +65,14 @@
    (damping ratio 0.76, response 0.32s), sampled into linear(). It overshoots
    2.54% — about 8px on a 317px slide — peaking at 54% of the transition, then
    settles to within 0.33px of the target, so there is no snap at the end.
-   Zen's stock curve overshoots only 0.34%, which reads as flat. */
+   Zen's stock curve overshoots only 0.34%, which reads as flat.
+
+   Closing is 0.36s on cubic-bezier(0.45, 0, 0.7, 0.55) — an ease-in, so the
+   panel releases gently and builds speed on the way out, covering 6% / 27% /
+   61% of the travel at a quarter, half and three quarters of the transition.
+   It is still moving when it clips past the window edge, which is what reads
+   as "sweeping away" rather than "snapping shut". No overshoot: a panel that
+   bounces on exit reads as a toy. */
 
 @media -moz-pref("mod.safari.sidebar-animation") {
   :root {
@@ -82,8 +89,8 @@
       1.0038 82%, 1.0029 84%, 1.0021 86%, 1.0015 88%, 1.0009 90%,
       1.0005 92%, 1.0001 94%, 0.9999 96%, 0.9997 98%, 1.0000 100%
     );
-    --safari-close-time: 0.19s;
-    --safari-close-ease: cubic-bezier(0.32, 0.72, 0, 1);
+    --safari-close-time: 0.36s;
+    --safari-close-ease: cubic-bezier(0.45, 0, 0.7, 0.55);
   }
 
   /* Closing. Lower specificity than the opening rule below, so that one wins
@@ -114,7 +121,8 @@
       ):not([animate="true"]) {
       transition:
         left 0.12s ease-out,
-        right 0.12s ease-out !important;
+        right 0.12s ease-out,
+        visibility 0.12s ease-out !important;
     }
   }
 }

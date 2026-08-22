@@ -137,7 +137,25 @@ response of a damped harmonic oscillator, damping ratio **0.76**, response
 - overshoot **2.54%** (≈8px on a 317px slide), peaking at 54% of the transition
 - settles to within **0.33px** of target, so the forced `1.0000 100%` stop
   causes no visible snap
-- closing is 0.19s `cubic-bezier(0.32, 0.72, 0, 1)`, no overshoot
+Closing is **0.36s** on `cubic-bezier(0.45, 0, 0.7, 0.55)`, no overshoot.
+
+The original 0.19s `cubic-bezier(0.32, 0.72, 0, 1)` felt mismatched against the
+open, and the duration was only half the reason — that curve is an *ease-out*,
+so it covered 78% of the travel in the first quarter of the transition. The
+panel effectively teleported and then crawled. The replacement is an ease-in:
+
+| point of transition | 25% | 50% | 75% |
+|---|---|---|---|
+| old `cubic-bezier(0.32, 0.72, 0, 1)` | 0.779 | 0.955 | 0.992 |
+| new `cubic-bezier(0.45, 0, 0.7, 0.55)` | 0.062 | 0.265 | 0.606 |
+
+It leaves gently, builds speed, and is still accelerating when it clips past the
+window edge.
+
+A time-reversed critically damped spring was tried first, to keep the same
+physical family as the open curve, and rejected: reversing a step response
+inherits its long asymptotic tail as a *dead zone at the start* — only 0.7% of
+the travel in the first quarter — which reads as input lag on exit.
 
 Nearby options if the overshoot needs retuning: damping 0.78 → 6.3px,
 0.74 → 10px, 0.72 → 12.2px.
