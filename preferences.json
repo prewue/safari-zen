@@ -39,6 +39,12 @@
     "defaultValue": true
   },
   {
+    "property": "mod.safari.flush-content",
+    "label": "📐 Flush content edges (no gap between the page and the window)",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
     "property": "mod.safari.sidebar-animation",
     "label": "✨ Premium sidebar reveal animation (light spring)",
     "type": "checkbox",

@@ -34,7 +34,8 @@ gradient, just softer — and switching workspaces still cross-fades normally.
 
 **Safari-like sidebar shape.** The sidebar floats 22px from the window edge with
 a 20px corner radius and tighter internal padding, so it reads as a panel rather
-than a docked strip.
+than a docked strip. The page itself sits flush against the window, with no gap
+around it.
 
 **Spring reveal animation.** Hovering the edge slides the sidebar in with a
 light spring that overshoots slightly and settles. Closing is quicker and
@@ -51,6 +52,7 @@ Open **Settings → Mods → Safari-like Zen**.
 | Sidebar blur radius | `24px` | How soft the blur is |
 | Sidebar blur saturation | `150%` | How vivid colours stay through the blur |
 | Theme gradient on top of the blur | `1` | How much of your theme colour shows, `0`–`1` |
+| Flush content edges | On | Removes the gap between the page and the window |
 | Custom window corner radius | On | Rounds the window corners (macOS only) |
 | Premium sidebar reveal animation | On | The spring slide-in |
 

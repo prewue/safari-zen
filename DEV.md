@@ -107,7 +107,51 @@ The layer itself is `display: none` outside compact mode — it only becomes
 
 ---
 
-## 3. Sidebar reveal animation
+## 3. Content separation
+
+`zen.theme.content-element-separation` (integer, Zen default **8**, capped at 12)
+is set to `0` by `window-radius.uc.mjs`, gated on `mod.safari.flush-content`.
+
+It has to be a pref, not a CSS override. `zenThemeModifier.js` does two things
+with it:
+
+```js
+separation = Math.max(kMinElementSeparation, separation);   // kMin = 0.1px
+document.documentElement.style.setProperty("--zen-element-separation", separation + "px");
+if (separation == kMinElementSeparation) {
+  document.documentElement.setAttribute("zen-no-padding", true);
+} else {
+  document.documentElement.removeAttribute("zen-no-padding");
+}
+```
+
+So overriding `--zen-element-separation` in CSS would miss `zen-no-padding`,
+which `zen-browser-container.css`, `zen-compact-mode.css`, `zen-glance.css`,
+`zen-single-components.css` and `zen-split-view.css` all key off — including the
+compact-mode corner-radius compensation. The variable is also clamped to 0.1px,
+never actually 0.
+
+It cannot go in `preferences.json` either. Sine converts pref value types via
+`convertValueType`, which honours `"value": "num"`, but only in the *change*
+handlers. The initial default write does not run it:
+
+```js
+if (save) ucAPI.prefs.set(pref.property, value);   // raw string
+```
+
+`ucAPI.prefs.set` picks its setter from `typeof value`, so that would call
+`setStringPref` on an integer pref: it throws, gets swallowed by ucAPI's
+try/catch, and the default silently never applies. Setting it from our own
+script with `setIntPref` sidesteps the whole thing.
+
+Turning the toggle off only clears the pref when the current value is `0`, so a
+separation the user chose themselves is not clobbered.
+
+The pref is observed live by `zenThemeModifier`, so no restart is needed.
+
+---
+
+## 4. Sidebar reveal animation
 
 Zen's own rules, in `zen-compact-mode.css`:
 
@@ -189,7 +233,7 @@ at the start of the slide.
 
 ---
 
-## 4. Dead end: native `NSGlassEffectView`
+## 5. Dead end: native `NSGlassEffectView`
 
 Fully explored and **abandoned**. Do not retry from a mod.
 
@@ -252,7 +296,7 @@ ToolbarWindow
 
 ---
 
-## 5. Platform scope
+## 6. Platform scope
 
 Only the window corner radius is macOS-specific — it shells out to
 `/usr/bin/defaults` and self-guards on `Services.appinfo.OS === "Darwin"`. The
@@ -272,7 +316,7 @@ Both compare against `ucAPI.utils.os`, which is `AppConstants.platform.slice(0, 
 
 ---
 
-## 6. Method notes
+## 7. Method notes
 
 Useful techniques if any of this needs re-verifying:
 
