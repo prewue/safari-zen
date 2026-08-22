@@ -1,7 +1,8 @@
 # Safari-like Zen Layout — Sine mod
 
 A local Sine mod for Zen Browser on macOS. It makes Zen's chrome read closer to
-Safari: native macOS window corners plus sidebar rounding and padding tweaks.
+Safari: native macOS window corners, a natively translucent sidebar, plus
+sidebar rounding and padding tweaks.
 
 ## What it changes
 
@@ -19,12 +20,63 @@ Suggested values:
 - 10 — strongly reduced
 - 0.1 — nearly square
 
+**Translucent sidebar** — turns on Zen's own `zen.theme.acrylic-elements` and
+retunes it. See the next section.
+
 **Chrome CSS** (`chrome.css`):
 - `--zen-compact-float: 22px` on `#navigator-toolbox` — outer padding of the
   sidebar from the window edge.
 - `--zen-border-radius: 20px` — sidebar corner radius.
 - `padding: 2px 8px 8px 8px` on the compact-mode `#titlebar`, replacing Zen's
   uniform `var(--zen-toolbox-padding)`, using the same selector Zen ships.
+
+## Translucent sidebar
+
+The transparency itself is **Zen's native path**, not a CSS reimplementation.
+`zen.theme.acrylic-elements` is Zen's own switch, and this mod just exposes it
+in the settings and fixes its rough edges.
+
+What Zen does when it is on:
+
+- `ZenGradientGenerator.mjs` returns the sidebar's base colour at **0.6 alpha
+  instead of opaque**, so your theme is recomputed translucent rather than
+  discarded — a gradient stays a gradient.
+- `zen-compact-mode.css` swaps `#zen-toolbar-background` to a transparent
+  background with `backdrop-filter: blur(42px) saturate(110%) brightness(0.25)
+  contrast(100%)`.
+
+Two problems with the stock version, both handled here:
+
+1. That `brightness(0.25)` is a **dark-mode hardcode** — in light mode it
+   crushes the sidebar to near-black. `mod.safari.acrylic-tune` rebuilds the
+   filter without it and makes blur and saturation configurable.
+2. Naively overriding the tint breaks Zen's workspace crossfade. The tint is
+   scaled through `--zen-background-opacity` so the incoming (`::after`) and
+   outgoing (`::before`) theme layers keep summing correctly.
+
+**`zen.theme.acrylic-elements` is read once at startup**, in a field
+initialiser on `ZenGradientGenerator`. Toggling it at runtime updates the CSS
+but not the recomputed theme colours, which leaves the sidebar opaque with no
+way to toggle back. Always **fully quit Zen (⌘Q)** after changing it.
+
+### Settings
+
+| Pref | Default | What it does |
+|---|---|---|
+| `zen.theme.acrylic-elements` | on | Zen's native translucent sidebar (**restart required**) |
+| `mod.safari.acrylic-tune` | on | Rebuild Zen's filter without the dark-only brightness |
+| `mod.safari.acrylic-blur` | `42px` | Blur radius |
+| `mod.safari.acrylic-saturation` | `140%` | Blur saturation |
+| `mod.safari.acrylic-tint` | `1` | How much of the theme gradient stays on top |
+
+### Why not real Liquid Glass
+
+A native `NSGlassEffectView` can be created and placed correctly under Zen's
+`ChildView` from chrome JS, but it can never be seen: Gecko composites its
+surface with **alpha = 255 everywhere**, verified by sampling a live window's
+alpha channel. Surface transparency is decided by the widget's transparency
+mode in `nsCocoaWindow` at window creation, which a mod cannot reach. Zen's
+acrylic path is the workable route.
 
 ## Reset
 

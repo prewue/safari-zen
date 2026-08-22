@@ -24,3 +24,35 @@
     }
   }
 }
+
+/* 4. Translucent sidebar.
+   The switch itself is Zen's own `zen.theme.acrylic-elements`, exposed in this
+   mod's settings — see the README for what it does. This block only retunes the
+   filter Zen applies, it does not create the transparency. */
+
+@media -moz-pref("zen.theme.acrylic-elements") and -moz-pref("mod.safari.acrylic-tune") {
+  #zen-toolbar-background {
+    /* Zen ships:
+         blur(42px) saturate(110%) brightness(0.25) contrast(100%)
+       That brightness is a dark-mode hardcode — in light mode it crushes the
+       sidebar to near-black. Rebuild the filter without it. */
+    backdrop-filter:
+      blur(var(--mod-safari-acrylic-blur, 42px))
+      saturate(var(--mod-safari-acrylic-saturation, 140%)) !important;
+
+    /* Scale the theme gradient sitting on top of the blur, without breaking
+       Zen's workspace crossfade: ::after is the incoming theme and ::before the
+       outgoing one, and their opacities have to keep summing the same way. */
+    &::after {
+      opacity: calc(
+        var(--zen-background-opacity) * var(--mod-safari-acrylic-tint, 1)
+      ) !important;
+    }
+
+    &::before {
+      opacity: calc(
+        (1 - var(--zen-background-opacity)) * var(--mod-safari-acrylic-tint, 1)
+      ) !important;
+    }
+  }
+}

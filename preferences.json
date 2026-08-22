@@ -1,0 +1,35 @@
+[
+  {
+    "property": "zen.theme.acrylic-elements",
+    "label": "🪟 Native translucent sidebar (Zen acrylic) — restart required",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "property": "mod.safari.acrylic-tune",
+    "label": "🎨 Retune Zen's acrylic filter (drops its dark-only brightness)",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "property": "mod.safari.acrylic-blur",
+    "label": "🌫️ Sidebar blur radius",
+    "type": "string",
+    "defaultValue": "42px",
+    "placeholder": "42px"
+  },
+  {
+    "property": "mod.safari.acrylic-saturation",
+    "label": "🎨 Sidebar blur saturation",
+    "type": "string",
+    "defaultValue": "140%",
+    "placeholder": "140%"
+  },
+  {
+    "property": "mod.safari.acrylic-tint",
+    "label": "🎨 How much of your theme gradient stays on top of the blur (0–1)",
+    "type": "string",
+    "defaultValue": "1",
+    "placeholder": "1"
+  }
+]
