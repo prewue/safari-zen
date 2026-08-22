@@ -137,7 +137,7 @@ response of a damped harmonic oscillator, damping ratio **0.76**, response
 - overshoot **2.54%** (≈8px on a 317px slide), peaking at 54% of the transition
 - settles to within **0.33px** of target, so the forced `1.0000 100%` stop
   causes no visible snap
-Closing is **0.36s** on `cubic-bezier(0.45, 0, 0.7, 0.55)`, no overshoot.
+Closing is **0.30s** on `cubic-bezier(0.45, 0, 0.7, 0.55)`, no overshoot.
 
 The original 0.19s `cubic-bezier(0.32, 0.72, 0, 1)` felt mismatched against the
 open, and the duration was only half the reason — that curve is an *ease-out*,
@@ -150,7 +150,18 @@ panel effectively teleported and then crawled. The replacement is an ease-in:
 | new `cubic-bezier(0.45, 0, 0.7, 0.55)` | 0.062 | 0.265 | 0.606 |
 
 It leaves gently, builds speed, and is still accelerating when it clips past the
-window edge.
+window edge. Because the travel is back-loaded, the perceived speed runs ahead
+of the wall-clock duration — 0.30s here reads faster than 0.30s on a symmetric
+curve would.
+
+Zen synchronises companion elements with the toolbox by hand rather than through
+a variable — `zen-compact-mode.css:196` carries `transition: visibility 0.15s`
+on `#titlebar` with the comment *"Same as the toolbox"*. Retiming the close
+without moving those desynchronises them: the panel keeps sliding while its
+contents blank out at 0.15s, which looks like the sidebar vanishing mid-slide
+with stray elements left behind. Both `#titlebar` and
+`--zen-hidden-toolbar-transition-duration` now derive from
+`--safari-close-time`, so changing the close duration moves everything at once.
 
 A time-reversed critically damped spring was tried first, to keep the same
 physical family as the open curve, and rejected: reversing a step response

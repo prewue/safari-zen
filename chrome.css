@@ -67,7 +67,7 @@
    settles to within 0.33px of the target, so there is no snap at the end.
    Zen's stock curve overshoots only 0.34%, which reads as flat.
 
-   Closing is 0.36s on cubic-bezier(0.45, 0, 0.7, 0.55) — an ease-in, so the
+   Closing is 0.30s on cubic-bezier(0.45, 0, 0.7, 0.55) — an ease-in, so the
    panel releases gently and builds speed on the way out, covering 6% / 27% /
    61% of the travel at a quarter, half and three quarters of the transition.
    It is still moving when it clips past the window edge, which is what reads
@@ -89,7 +89,7 @@
       1.0038 82%, 1.0029 84%, 1.0021 86%, 1.0015 88%, 1.0009 90%,
       1.0005 92%, 1.0001 94%, 0.9999 96%, 0.9997 98%, 1.0000 100%
     );
-    --safari-close-time: 0.36s;
+    --safari-close-time: 0.30s;
     --safari-close-ease: cubic-bezier(0.45, 0, 0.7, 0.55);
   }
 
@@ -105,7 +105,8 @@
   /* Zen keeps companion elements in sync with the toolbox by hand — see
      "Same as the toolbox" on #titlebar in zen-compact-mode.css. Lengthening
      the close without moving those desynchronises them: the panel is still
-     sliding at 0.36s while its contents blank out at 0.15s. Move them too. */
+     sliding while its contents blank out at 0.15s. Move them too — both
+     follow --safari-close-time, so retiming the close retimes everything. */
   #navigator-toolbox:not([animate="true"]):not(:is(
       [zen-has-hover], [zen-user-show], [zen-has-empty-tab], [flash-popup],
       [has-popup-menu], [movingtab], [zen-compact-mode-active]
