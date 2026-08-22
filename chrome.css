@@ -102,6 +102,22 @@
       visibility var(--safari-close-time) var(--safari-close-ease) !important;
   }
 
+  /* Zen keeps companion elements in sync with the toolbox by hand — see
+     "Same as the toolbox" on #titlebar in zen-compact-mode.css. Lengthening
+     the close without moving those desynchronises them: the panel is still
+     sliding at 0.36s while its contents blank out at 0.15s. Move them too. */
+  #navigator-toolbox:not([animate="true"]):not(:is(
+      [zen-has-hover], [zen-user-show], [zen-has-empty-tab], [flash-popup],
+      [has-popup-menu], [movingtab], [zen-compact-mode-active]
+    )) #titlebar {
+    transition: visibility var(--safari-close-time) var(--safari-close-ease) !important;
+  }
+
+  /* The variable Zen uses for the rest of the hidden-toolbar timings. */
+  :root {
+    --zen-hidden-toolbar-transition-duration: var(--safari-close-time) !important;
+  }
+
   /* Opening. Same trigger set Zen uses; visibility is intentionally left out
      so the panel is on screen for the whole slide. */
   #navigator-toolbox:is(
