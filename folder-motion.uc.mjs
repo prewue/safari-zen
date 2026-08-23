@@ -1,4 +1,4 @@
-// Folder and pinned-section motion.
+// Folder motion.
 //
 // Zen animates folder contents from JS (ZenFolders.mjs) with a hardcoded
 // 0.12s / "easeInOut", while the folder icon animates from CSS over 0.3s and
@@ -6,13 +6,15 @@
 // content duration is also fixed regardless of how much content there is, so
 // a two-tab folder and a fifteen-tab folder move at very different speeds.
 //
+// The pinned tabs section is deliberately left alone: animating it from here
+// fought Zen's own collapse and came out jerky in both directions.
+//
 // This wraps gZenUIManager.motion.animate, retimes those calls, and publishes
 // the chosen duration and easing as CSS variables so the icon and chevrons can
 // ride the exact same timing.
 
 const PREF = {
   enabled: "mod.safari.folder-motion",
-  pinned: "mod.safari.pinned-collapse-motion",
 };
 
 // Zen's folder signature: every folder call goes out with exactly these.
@@ -24,7 +26,13 @@ const ZEN_FOLDER_EASE = "easeInOut";
 // has to answer immediately in either direction. The asymmetry lives in the
 // duration and the overshoot, not in a slow start.
 const EASE_OPEN = [0.34, 1.26, 0.64, 1];
+const EASE_OPEN_TALL = [0.22, 0.85, 0.3, 1];
 const EASE_CLOSE = [0.25, 0.9, 0.35, 1];
+
+// The overshoot is a percentage of the distance travelled, so on a tall folder
+// 2.2% turns into a large, springy bounce. Past this height the open curve
+// drops the overshoot and just decelerates.
+const NO_BOUNCE_ABOVE = 180;
 
 const MIN_DURATION = 0.18;
 const MAX_DURATION = 0.42;
@@ -77,7 +85,7 @@ function main() {
     const now = Date.now();
     if (folder) {
       const hit = heightCache.get(folder);
-      if (hit && now - hit.t < 150) return hit.d;
+      if (hit && now - hit.t < 150) return { d: hit.d, h: hit.h };
     }
 
     let h = 0;
@@ -90,8 +98,13 @@ function main() {
     } catch (e) {}
 
     const d = Math.min(MAX_DURATION, Math.max(MIN_DURATION, MIN_DURATION + h * PER_PX));
-    if (folder) heightCache.set(folder, { d, t: now });
-    return d;
+    const out = { d, h };
+    if (folder) heightCache.set(folder, { ...out, t: now });
+    return out;
+  }
+
+  function openEase(height) {
+    return height > NO_BOUNCE_ABOVE ? EASE_OPEN_TALL : EASE_OPEN;
   }
 
   function isShrinking(target) {
@@ -122,9 +135,9 @@ function main() {
       }
 
       const shrinking = isShrinking(target);
-      const base = folderDuration(el);
+      const { d: base, h } = folderDuration(el);
       const duration = shrinking ? base * CLOSE_RATIO : base;
-      const ease = shrinking ? EASE_CLOSE : EASE_OPEN;
+      const ease = shrinking ? EASE_CLOSE : openEase(h);
 
       publish(duration, ease);
 
@@ -145,63 +158,6 @@ function main() {
       return original(el, target, opts, ...rest);
     }
   };
-
-  // ---- Pinned section ---------------------------------------------------
-  // ZenSpace.mjs only flips the `collapsedpinnedtabs` attribute, so the
-  // section disappears in a single frame while the folder right next to it
-  // animates. Give it the same gesture.
-  if (getBool(PREF.pinned, true)) {
-    const observer = new window.MutationObserver(records => {
-      for (const rec of records) {
-        if (rec.attributeName !== "collapsedpinnedtabs") continue;
-        const space = rec.target;
-        const container = space.pinnedTabsContainer;
-        if (!container) continue;
-
-        const collapsing = space.hasAttribute("collapsedpinnedtabs");
-        try {
-          const h =
-            window.windowUtils.getBoundsWithoutFlushing(container).height ||
-            container.scrollHeight ||
-            0;
-          const base = Math.min(
-            MAX_DURATION,
-            Math.max(MIN_DURATION, MIN_DURATION + h * PER_PX)
-          );
-          const duration = collapsing ? base * CLOSE_RATIO : base;
-          const ease = collapsing ? EASE_CLOSE : EASE_OPEN;
-          publish(duration, ease);
-
-          um.motion
-            .animate(
-              container,
-              collapsing
-                ? { height: [h + "px", 0], opacity: [1, 0] }
-                : { height: [0, h + "px"], opacity: [0, 1] },
-              {
-                duration,
-                ease,
-                opacity: collapsing
-                  ? { duration: duration * 0.5, ease: "linear" }
-                  : { duration: duration * 0.65, delay: duration * 0.35, ease: "linear" },
-              }
-            )
-            .then(() => {
-              container.style.removeProperty("height");
-              container.style.removeProperty("opacity");
-            });
-        } catch (e) {
-          console.error(TAG, "pinned collapse animation failed:", e);
-        }
-      }
-    });
-
-    for (const space of document.querySelectorAll("zen-workspace")) {
-      observer.observe(space, { attributes: true, attributeFilter: ["collapsedpinnedtabs"] });
-    }
-
-    window.addEventListener("unload", () => observer.disconnect(), { once: true });
-  }
 
   window.addEventListener(
     "unload",

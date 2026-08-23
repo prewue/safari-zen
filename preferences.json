@@ -80,14 +80,8 @@
     "defaultValue": true
   },
   {
-    "property": "mod.safari.pinned-collapse-motion",
-    "label": "📌 Hiding the pinned tabs section",
-    "type": "checkbox",
-    "defaultValue": true
-  },
-  {
-    "property": "mod.safari.tab-button-fade",
-    "label": "❌ Close and reset buttons on a tab — blur in and out",
+    "property": "mod.safari.tab-hover",
+    "label": "🖱️ Tab hover — background and buttons fade in together",
     "type": "checkbox",
     "defaultValue": true
   },

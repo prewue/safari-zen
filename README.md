@@ -81,8 +81,7 @@ not a customiser.
 |---|---|
 | Sidebar reveal | Springs in, blurs and fades on the way out |
 | Folder open and close | Icon, chevron and contents move as one, scaled to folder size |
-| Hiding the pinned tabs section | Animates instead of cutting |
-| Close and reset buttons on a tab | Blur in and out on hover |
+| Tab hover | Background and the close/reset buttons fade in together |
 | Blur the page while switching spaces | Old space blurs out, the new one arrives out of focus |
 
 Two of these — **Native window corner radius** and **Native translucent

@@ -112,7 +112,15 @@
       [zen-has-hover], [zen-user-show], [zen-has-empty-tab], [flash-popup],
       [has-popup-menu], [movingtab], [zen-compact-mode-active]
     )) #titlebar {
-    transition: visibility var(--safari-close-time) var(--safari-close-ease) !important;
+    /* This carries the whole list on purpose. It outranks any shorter rule on
+       #titlebar, so declaring filter and opacity separately elsewhere would be
+       silently dropped and the panel would blink out instead of dissolving. */
+    transition:
+      visibility var(--safari-close-time) var(--safari-close-ease),
+      filter var(--safari-close-time) var(--safari-close-ease),
+      opacity var(--safari-close-time) var(--safari-close-ease) !important;
+    filter: blur(var(--safari-close-blur));
+    opacity: var(--safari-close-opacity);
   }
 
   /* The variable Zen uses for the rest of the hidden-toolbar timings. */
@@ -134,6 +142,11 @@
        context and a containing block around the toolbox for no reason. */
     filter: none;
     opacity: 1;
+
+    & #titlebar {
+      filter: none;
+      opacity: 1;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -175,24 +188,33 @@
        stops are simply identical. */
     --safari-edge: linear-gradient(
       to right,
-      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.149)) 0%,
-      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.078)) 50%,
-      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.251)) 100%
+      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.17)) 0%,
+      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.10)) 50%,
+      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.27)) 100%
     );
 
-    /* The active tab is meant to stay exactly as Zen ships it in light mode,
-       so its edge fades out entirely there. */
+    /* The tab cannot go through light-dark(): .tab-background resolves its
+       color-scheme as light, so light-dark() always returned the first
+       argument and the whole treatment was invisible. The urlbar sits in a
+       dark-scheme toolbar, which is why only the search field worked. Zen's
+       own zen-should-be-dark-mode attribute is the reliable signal.
+       Light mode keeps Zen's tab exactly as shipped: edge stays transparent. */
+    --safari-tab-edge: transparent;
+  }
+
+  :root[zen-should-be-dark-mode="true"] {
     --safari-tab-edge: linear-gradient(
       to right,
-      light-dark(transparent, rgba(255, 255, 255, 0.149)) 0%,
-      light-dark(transparent, rgba(255, 255, 255, 0.078)) 50%,
-      light-dark(transparent, rgba(255, 255, 255, 0.251)) 100%
+      rgba(255, 255, 255, 0.17) 0%,
+      rgba(255, 255, 255, 0.10) 50%,
+      rgba(255, 255, 255, 0.27) 100%
     );
   }
 
   /* Outer 1px stroke, shared geometry. */
   #urlbar:not([breakout-extend]) > .urlbar-background::after,
-  .tabbrowser-tab[visuallyselected] > .tab-stack > .tab-background::after {
+  .tabbrowser-tab[visuallyselected]:not([zen-essential="true"])
+    > .tab-stack > .tab-background::after {
     content: "";
     position: absolute;
     inset: -1px;
@@ -210,7 +232,8 @@
     background: var(--safari-edge);
   }
 
-  .tabbrowser-tab[visuallyselected] > .tab-stack > .tab-background::after {
+  .tabbrowser-tab[visuallyselected]:not([zen-essential="true"])
+    > .tab-stack > .tab-background::after {
     background: var(--safari-tab-edge);
   }
 
@@ -228,20 +251,29 @@
       0 4px 7px light-dark(rgba(0, 0, 0, 0.059), transparent) !important;
   }
 
-  /* Active tab. In light mode this resolves back to Zen's own selected-tab
-     colour, leaving it untouched. .tab-background is statically positioned,
-     so it needs to become a containing block for the stroke above. */
+  /* Active tab. .tab-background is statically positioned, so it has to become
+     a containing block for the stroke above. The fill is dark-mode only, so
+     light mode keeps Zen's own selected-tab colour untouched. */
   .tabbrowser-tab[visuallyselected] > .tab-stack > .tab-background {
     position: relative;
-    background: light-dark(
-      var(--tab-background-color-selected),
-      rgba(255, 255, 255, 0.09)
-    ) !important;
+  }
+
+  :root[zen-should-be-dark-mode="true"]
+    .tabbrowser-tab[visuallyselected] > .tab-stack > .tab-background {
+    background: rgba(255, 255, 255, 0.09) !important;
   }
 }
 
-/* 7. Tab hover buttons.
-   Zen reveals the close and reset buttons with `display` alone
+/* 7. Tab hover.
+   Two parts of one event, on one timing so they read as a single response.
+
+   The tab's own background has no transition at all — neither Zen nor Firefox
+   declares one, so `--tab-background-color-hover` (tabs.css:916) and the
+   selected colour both snap in. `outline-color` rides along because Firefox
+   switches it on hover too, and letting it lag would split the edge from the
+   fill.
+
+   The buttons are the harder half: Zen reveals them with `display` alone
    (vertical-tabs.css:672-681 and :902-906), which normally cannot animate.
    `transition-behavior: allow-discrete` keeps the element displayed for the
    duration so it can fade out first, and `@starting-style` gives it a state
@@ -253,17 +285,25 @@
    on `:hover` or `[visuallyselected]` — so no button that Zen keeps visible
    can end up faded out. */
 
-@media -moz-pref("mod.safari.tab-button-fade") {
+@media -moz-pref("mod.safari.tab-hover") {
   :root {
-    --safari-tabbtn-time: 0.16s;
+    /* Long enough to read as a fade, short enough that running the pointer
+       down a list of tabs does not leave a smear behind it. */
+    --safari-tabhover-time: 0.2s;
     --safari-tabbtn-blur: 4px;
+  }
+
+  .tabbrowser-tab > .tab-stack > .tab-background {
+    transition:
+      background-color var(--safari-tabhover-time) ease,
+      outline-color var(--safari-tabhover-time) ease !important;
   }
 
   .tabbrowser-tab :is(.tab-close-button, .tab-reset-button) {
     transition:
-      opacity var(--safari-tabbtn-time) ease,
-      filter var(--safari-tabbtn-time) ease,
-      display var(--safari-tabbtn-time) allow-discrete !important;
+      opacity var(--safari-tabhover-time) ease,
+      filter var(--safari-tabhover-time) ease,
+      display var(--safari-tabhover-time) allow-discrete !important;
 
     @starting-style {
       opacity: 0;
@@ -278,6 +318,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .tabbrowser-tab > .tab-stack > .tab-background,
     .tabbrowser-tab :is(.tab-close-button, .tab-reset-button) {
       transition: none !important;
       filter: none !important;
@@ -294,6 +335,10 @@
    attributes reads as the old space blurring out and the new one arriving out
    of focus — no per-space bookkeeping needed.
 
+   The target is the space's own content in the sidebar - folders, tabs,
+   pinned items - not the web page. Blurring #tabbrowser-tabpanels was wrong:
+   the page is not what changes when you switch spaces.
+
    In is quicker than out on purpose: the blur has to be there before the swap
    lands, while the reveal can afford to breathe. */
 
@@ -304,18 +349,18 @@
     --safari-space-out: 0.32s;
   }
 
-  #tabbrowser-tabpanels {
+  #tabbrowser-tabs zen-workspace {
     transition: filter var(--safari-space-out) ease-out !important;
   }
 
-  :root:is([swipe-gesture], [animating-background]) #tabbrowser-tabpanels {
+  :root:is([swipe-gesture], [animating-background]) #tabbrowser-tabs zen-workspace {
     filter: blur(var(--safari-space-blur));
     transition: filter var(--safari-space-in) ease-in !important;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    #tabbrowser-tabpanels,
-    :root:is([swipe-gesture], [animating-background]) #tabbrowser-tabpanels {
+    #tabbrowser-tabs zen-workspace,
+    :root:is([swipe-gesture], [animating-background]) #tabbrowser-tabs zen-workspace {
       filter: none !important;
       transition: none !important;
     }
@@ -347,12 +392,6 @@
     transition:
       transform var(--safari-folder-time, 0.24s) var(--safari-folder-ease, ease-out),
       opacity calc(var(--safari-folder-time, 0.24s) * 0.6) linear !important;
-  }
-
-  /* The section is height-animated by the script, so it must not also be
-     hard-clipped mid-flight. */
-  zen-workspace[collapsedpinnedtabs] .zen-workspace-pinned-tabs-section {
-    overflow-y: clip;
   }
 
   @media (prefers-reduced-motion: reduce) {
