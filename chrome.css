@@ -318,9 +318,15 @@
    commits (ZenSpace.mjs:308), so for the whole gesture it still marks the
    source.
 
-   During the drag the filter tracks the variable with no transition, so it is
-   locked to the finger. When the attribute clears, both rules stop matching
-   and the blur eases back to none on its own. */
+   The blur transition is itself a variable. While a finger is driving it the
+   script holds --safari-space-track at 0s, so the blur is locked to the
+   movement rather than lagging behind it. The moment the change commits, or
+   the gesture ends, the script zeroes the progress and raises the track to a
+   real duration, so the settle is eased instead of snapped.
+
+   That commit-time reset matters: `active` moves to the new space while
+   `swipe-gesture` is still up, so without it the space already in view would
+   match the outgoing rule and sit there holding the last progress value. */
 
 @media -moz-pref("mod.safari.space-switch-blur") {
   :root {
@@ -335,7 +341,7 @@
   /* Leaving: sharp at rest, blurring as you pull away. */
   :root[swipe-gesture] #tabbrowser-tabs zen-workspace[active] {
     filter: blur(calc(var(--safari-space-progress, 0) * var(--safari-space-blur)));
-    transition: none !important;
+    transition: filter var(--safari-space-track, 0s) linear !important;
   }
 
   /* Arriving: starts blurred off-screen and sharpens as it comes in. */
@@ -343,7 +349,7 @@
     filter: blur(
       calc((1 - var(--safari-space-progress, 0)) * var(--safari-space-blur))
     );
-    transition: none !important;
+    transition: filter var(--safari-space-track, 0s) linear !important;
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -178,6 +178,8 @@ function main() {
 // as its third argument. Wrapping that method is the one place the number is
 // available, so the blur can follow the finger instead of flashing on and off
 // at the edges of the gesture.
+const SETTLE = "0.32s";
+
 function trackSwipeProgress(root) {
   if (!getBool(PREF.spaceBlur, true)) return;
 
@@ -187,9 +189,13 @@ function trackSwipeProgress(root) {
     return;
   }
 
-  const setProgress = p => {
+  // `track` is the transition applied to the blur. Zero while a finger is
+  // driving it, so the blur is locked to the movement; non-zero once the
+  // change commits, so the settle is eased rather than snapped.
+  const setProgress = (p, track = "0s") => {
     try {
       root.style.setProperty("--safari-space-progress", String(p));
+      root.style.setProperty("--safari-space-track", track);
     } catch (e) {}
   };
 
@@ -236,13 +242,35 @@ function trackSwipeProgress(root) {
   const observer = new window.MutationObserver(() => {
     if (root.hasAttribute("swipe-gesture")) {
       window.clearTimeout(watchdog);
-      watchdog = window.setTimeout(() => setProgress(0), 4000);
+      watchdog = window.setTimeout(() => setProgress(0, SETTLE), 4000);
     } else {
       window.clearTimeout(watchdog);
-      setProgress(0);
+      setProgress(0, SETTLE);
     }
   });
   observer.observe(root, { attributes: true, attributeFilter: ["swipe-gesture"] });
+
+  // The commit does not wait for the gesture to be released: `active` moves to
+  // the new space while `swipe-gesture` is still up, so the space now in view
+  // would match the outgoing rule and sit there holding the last progress
+  // value. Zeroing on the attribute move clears it the instant it stops being
+  // the one you are leaving.
+  const activeObserver = new window.MutationObserver(records => {
+    for (const rec of records) {
+      if (rec.target.localName === "zen-workspace") {
+        setProgress(0, SETTLE);
+        return;
+      }
+    }
+  });
+  const strip = document.getElementById("tabbrowser-tabs");
+  if (strip) {
+    activeObserver.observe(strip, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ["active"],
+    });
+  }
 
   window.addEventListener(
     "unload",
@@ -250,6 +278,7 @@ function trackSwipeProgress(root) {
       try {
         window.clearTimeout(watchdog);
         observer.disconnect();
+        activeObserver.disconnect();
         ws._organizeWorkspaceStripLocations = original;
       } catch (e) {}
     },
