@@ -1,9 +1,20 @@
 {
-  "id": "window-corner-radius",
+  "id": "safari-zen",
   "name": "Safari-like Zen",
-  "description": "Makes Zen look like Safari on macOS: native window corner radius, a natively translucent sidebar, and matching rounding and padding.",
-  "version": "1.3.0",
-  "author": "Local",
+  "description": "Makes Zen feel like Safari on macOS: native window corner radius, a translucent blurred sidebar, Safari-matched sidebar padding, and a spring reveal animation.",
+  "version": "1.4.0",
+  "author": "prewue",
+  "homepage": "https://github.com/prewue/safari-zen",
+  "readme": "https://raw.githubusercontent.com/prewue/safari-zen/main/README.md",
+  "image": "https://github.com/user-attachments/assets/217cd074-300f-4893-987f-3f23704b3ee3",
+  "createdAt": "2026-08-22",
+  "tags": [
+    "macos",
+    "safari",
+    "sidebar",
+    "animations",
+    "chrome"
+  ],
   "fork": [
     "zen"
   ],
@@ -13,6 +24,8 @@
   "preferences": "preferences.json",
   "scripts": {
     "window-radius.uc.mjs": {
+      "name": "Startup script",
+      "description": "Applies the native macOS window corner radius and removes the content separation.",
       "include": [
         "chrome://browser/content/browser.xhtml"
       ]
