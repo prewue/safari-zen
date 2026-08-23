@@ -301,61 +301,41 @@
 }
 
 /* 8. Space switching.
-   Zen marks the transition on the root: `swipe-gesture` is set while the
-   gesture is in progress (ZenSpacesSwipe.mjs:107, cleared in
-   onSwipeGestureAnimationEnd) and `animating-background` while the change
-   itself animates (ZenSpaceManager.mjs:1868/1978, cleared at :2149). The
-   actual tab swap happens between those two, so a single blur driven off both
-   attributes reads as the old space blurring out and the new one arriving out
-   of focus — no per-space bookkeeping needed.
+   The blur follows the swipe rather than being triggered by it. Zen never
+   publishes how far the gesture has travelled - _handleSwipeUpdate computes
+   the offset and passes it straight to _organizeWorkspaceStripLocations - so
+   folder-motion.uc.mjs wraps that method and writes the normalised distance to
+   --safari-space-progress.
 
-   The target is the space's own content in the sidebar - folders, tabs,
-   pinned items - not the web page. The page is not what changes when you
-   switch spaces.
+   Everything driven off the attributes alone flickered, and for good reason:
+   `swipe-gesture` goes up the moment the fingers land and stays up for the
+   whole drag, while `animating-background` covers only the tail. Neither
+   describes how far you have actually pulled.
 
-   It fires on `animating-background` only, which brackets the actual space
-   change. `swipe-gesture` is deliberately not used: it is set the moment the
-   fingers land and stays up for the whole drag, so blurring on it meant a
-   flash of blur while you were still deciding where to go.
-
-   A one-shot animation rather than a filter held while the attribute is
-   present, because the attribute can outlive the gesture - it is cleared only
-   after an awaited Promise.race (ZenSpaceManager.mjs:2145), so anything
-   throwing before that leaves it set and the blur stuck. An animation always
-   runs to its own end and clears itself.
-
-   It does not follow the swipe. Zen computes the gesture delta internally and
-   hands it straight to _organizeWorkspaceStripLocations without publishing it,
-   so there is nothing for CSS to read - following it would mean patching
-   ZenSpacesSwipe, which is not worth the fragility. */
+   During the drag the filter tracks the variable with no transition, so it is
+   locked to the finger. When the attribute clears, this rule stops matching
+   and the blur eases back to none on its own. */
 
 @media -moz-pref("mod.safari.space-switch-blur") {
   :root {
     --safari-space-blur: 6px;
-    --safari-space-in: 0.16s;
     --safari-space-out: 0.32s;
   }
 
-  @keyframes safari-space-blur {
-    0% {
-      filter: blur(0);
-    }
-    35% {
-      filter: blur(var(--safari-space-blur));
-    }
-    100% {
-      filter: blur(0);
-    }
+  #tabbrowser-tabs zen-workspace {
+    transition: filter var(--safari-space-out) ease-out !important;
   }
 
-  :root[animating-background] #tabbrowser-tabs zen-workspace {
-    animation: safari-space-blur
-      calc(var(--safari-space-in) + var(--safari-space-out)) ease-out;
+  :root[swipe-gesture] #tabbrowser-tabs zen-workspace {
+    filter: blur(calc(var(--safari-space-progress, 0) * var(--safari-space-blur)));
+    transition: none !important;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    :root[animating-background] #tabbrowser-tabs zen-workspace {
-      animation: none !important;
+    #tabbrowser-tabs zen-workspace,
+    :root[swipe-gesture] #tabbrowser-tabs zen-workspace {
+      filter: none !important;
+      transition: none !important;
     }
   }
 }

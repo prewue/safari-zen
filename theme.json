@@ -32,7 +32,7 @@
     },
     "folder-motion.uc.mjs": {
       "name": "Folder motion",
-      "description": "Retimes folder and pinned-section animations so the icon, chevron and content move together.",
+      "description": "Retimes folder animations so icon, chevron and content move together, and publishes space swipe progress so the blur can follow the gesture.",
       "include": [
         "chrome://browser/content/browser.xhtml"
       ]

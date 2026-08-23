@@ -1,4 +1,4 @@
-// Folder motion.
+// Folder motion and space swipe progress.
 //
 // Zen animates folder contents from JS (ZenFolders.mjs) with a hardcoded
 // 0.12s / "easeInOut", while the folder icon animates from CSS over 0.3s and
@@ -15,6 +15,7 @@
 
 const PREF = {
   enabled: "mod.safari.folder-motion",
+  spaceBlur: "mod.safari.space-switch-blur",
 };
 
 // Zen's folder signature: every folder call goes out with exactly these.
@@ -60,6 +61,9 @@ if (document.readyState === "complete") {
 }
 
 function main() {
+  const root = document.documentElement;
+  trackSwipeProgress(root);
+
   if (!getBool(PREF.enabled, true)) {
     return;
   }
@@ -69,8 +73,6 @@ function main() {
     console.warn(TAG, "gZenUIManager.motion unavailable, skipping");
     return;
   }
-
-  const root = document.documentElement;
 
   // Folder heights change while the batch runs, so measure once per gesture
   // and reuse it for every item in that batch. Without this the items in one
@@ -164,6 +166,91 @@ function main() {
     () => {
       try {
         um.motion.animate = original;
+      } catch (e) {}
+    },
+    { once: true }
+  );
+}
+
+// ---- Space swipe progress ------------------------------------------------
+// Zen never publishes how far a space swipe has travelled: _handleSwipeUpdate
+// computes the offset and hands it straight to _organizeWorkspaceStripLocations
+// as its third argument. Wrapping that method is the one place the number is
+// available, so the blur can follow the finger instead of flashing on and off
+// at the edges of the gesture.
+function trackSwipeProgress(root) {
+  if (!getBool(PREF.spaceBlur, true)) return;
+
+  const ws = window.gZenWorkspaces;
+  if (typeof ws?._organizeWorkspaceStripLocations !== "function") {
+    console.warn(TAG, "gZenWorkspaces unavailable, swipe progress not tracked");
+    return;
+  }
+
+  const setProgress = p => {
+    try {
+      root.style.setProperty("--safari-space-progress", String(p));
+    } catch (e) {}
+  };
+
+  // Same measurement ZenSpacesSwipe uses for its own normalisation.
+  const stripWidth = () => {
+    try {
+      const w =
+        (document.getElementById("navigator-toolbox")
+          ? window.windowUtils.getBoundsWithoutFlushing(
+              document.getElementById("navigator-toolbox")
+            ).width
+          : 0) +
+        (document.getElementById("zen-sidebar-splitter")
+          ? window.windowUtils.getBoundsWithoutFlushing(
+              document.getElementById("zen-sidebar-splitter")
+            ).width
+          : 0);
+      return w > 0 ? w : 0;
+    } catch (e) {
+      return 0;
+    }
+  };
+
+  const original = ws._organizeWorkspaceStripLocations.bind(ws);
+  ws._organizeWorkspaceStripLocations = function (workspace, justMove, offsetPixels, ...rest) {
+    try {
+      if (
+        typeof offsetPixels === "number" &&
+        root.hasAttribute("swipe-gesture")
+      ) {
+        const w = stripWidth();
+        setProgress(w ? Math.min(1, Math.abs(offsetPixels) / w).toFixed(3) : 0);
+      }
+    } catch (e) {
+      console.error(TAG, "swipe progress failed:", e);
+    }
+    return original(workspace, justMove, offsetPixels, ...rest);
+  };
+
+  // The gesture attribute can outlive the gesture, so never leave the blur
+  // depending on it alone: zero the progress when it clears, and on a watchdog
+  // in case it never does.
+  let watchdog = null;
+  const observer = new window.MutationObserver(() => {
+    if (root.hasAttribute("swipe-gesture")) {
+      window.clearTimeout(watchdog);
+      watchdog = window.setTimeout(() => setProgress(0), 4000);
+    } else {
+      window.clearTimeout(watchdog);
+      setProgress(0);
+    }
+  });
+  observer.observe(root, { attributes: true, attributeFilter: ["swipe-gesture"] });
+
+  window.addEventListener(
+    "unload",
+    () => {
+      try {
+        window.clearTimeout(watchdog);
+        observer.disconnect();
+        ws._organizeWorkspaceStripLocations = original;
       } catch (e) {}
     },
     { once: true }
