@@ -312,8 +312,14 @@
    whole drag, while `animating-background` covers only the tail. Neither
    describes how far you have actually pulled.
 
+   The two spaces move in opposite directions at once: the one you are leaving
+   blurs as you pull away, the one arriving comes out of blur. `[active]` is
+   the right discriminator because Zen only flips it once the change actually
+   commits (ZenSpace.mjs:308), so for the whole gesture it still marks the
+   source.
+
    During the drag the filter tracks the variable with no transition, so it is
-   locked to the finger. When the attribute clears, this rule stops matching
+   locked to the finger. When the attribute clears, both rules stop matching
    and the blur eases back to none on its own. */
 
 @media -moz-pref("mod.safari.space-switch-blur") {
@@ -326,14 +332,24 @@
     transition: filter var(--safari-space-out) ease-out !important;
   }
 
-  :root[swipe-gesture] #tabbrowser-tabs zen-workspace {
+  /* Leaving: sharp at rest, blurring as you pull away. */
+  :root[swipe-gesture] #tabbrowser-tabs zen-workspace[active] {
     filter: blur(calc(var(--safari-space-progress, 0) * var(--safari-space-blur)));
+    transition: none !important;
+  }
+
+  /* Arriving: starts blurred off-screen and sharpens as it comes in. */
+  :root[swipe-gesture] #tabbrowser-tabs zen-workspace:not([active]) {
+    filter: blur(
+      calc((1 - var(--safari-space-progress, 0)) * var(--safari-space-blur))
+    );
     transition: none !important;
   }
 
   @media (prefers-reduced-motion: reduce) {
     #tabbrowser-tabs zen-workspace,
-    :root[swipe-gesture] #tabbrowser-tabs zen-workspace {
+    :root[swipe-gesture] #tabbrowser-tabs zen-workspace[active],
+    :root[swipe-gesture] #tabbrowser-tabs zen-workspace:not([active]) {
       filter: none !important;
       transition: none !important;
     }
