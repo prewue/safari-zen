@@ -83,11 +83,14 @@
     --safari-close-time: 0.30s;
     --safari-close-ease: cubic-bezier(0.45, 0, 0.7, 0.55);
 
-    /* How much the panel dissolves on its way out. Applied on close only:
+    /* Fades all the way out. Anything above 0 gets cut off in one frame when
+       visibility flips at the end of the transition, which is what read as the
+       panel vanishing rather than dissolving.
+       Applied on close only:
        the open rule below resets both without transitioning them, so the
        sidebar snaps sharp the moment it is revealed. */
     --safari-close-blur: 3px;
-    --safari-close-opacity: 0.35;
+    --safari-close-opacity: 0;
   }
 
   /* Closing. Lower specificity than the opening rule below, so that one wins
@@ -195,20 +198,38 @@
 
     /* The tab cannot go through light-dark(): .tab-background resolves its
        color-scheme as light, so light-dark() always returned the first
-       argument and the whole treatment was invisible. The urlbar sits in a
-       dark-scheme toolbar, which is why only the search field worked. Zen's
-       own zen-should-be-dark-mode attribute is the reliable signal.
-       Light mode keeps Zen's tab exactly as shipped: edge stays transparent. */
+       argument. The urlbar sits in a dark-scheme toolbar, which is why only
+       the search field appeared to work.
+
+       zen-should-be-dark-mode is no good either: ZenGradientGenerator only
+       sets it while the workspace carries a gradient theme and removes it
+       otherwise, so the styling vanished with the theme. The chrome scheme
+       actually comes from zen.view.window.scheme — 0 dark, 1 light, 2 system —
+       which is what Zen keys its own color-scheme blocks off (zen-theme.css:316).
+
+       Light mode keeps Zen's tab exactly as shipped: the edge stays
+       transparent and no fill is declared at all. */
     --safari-tab-edge: transparent;
   }
 
-  :root[zen-should-be-dark-mode="true"] {
-    --safari-tab-edge: linear-gradient(
-      to right,
-      rgba(255, 255, 255, 0.17) 0%,
-      rgba(255, 255, 255, 0.10) 50%,
-      rgba(255, 255, 255, 0.27) 100%
-    );
+  @media -moz-pref("zen.view.window.scheme", 0),
+    (-moz-system-dark-theme) and -moz-pref("zen.view.window.scheme", 2) {
+    :root {
+      --safari-tab-edge: linear-gradient(
+        to right,
+        rgba(255, 255, 255, 0.17) 0%,
+        rgba(255, 255, 255, 0.10) 50%,
+        rgba(255, 255, 255, 0.27) 100%
+      );
+    }
+
+    /* Declared inside the dark query rather than routed through a :root
+       fallback: --tab-background-color-selected is defined on the workspace
+       container, not on :root, so a var() default there would compute to the
+       invalid value and blank the tab out in light mode. */
+    .tabbrowser-tab[visuallyselected] > .tab-stack > .tab-background {
+      background: rgba(255, 255, 255, 0.09) !important;
+    }
   }
 
   /* Outer 1px stroke, shared geometry. */
@@ -258,10 +279,6 @@
     position: relative;
   }
 
-  :root[zen-should-be-dark-mode="true"]
-    .tabbrowser-tab[visuallyselected] > .tab-stack > .tab-background {
-    background: rgba(255, 255, 255, 0.09) !important;
-  }
 }
 
 /* 7. Tab hover.
@@ -336,11 +353,22 @@
    of focus — no per-space bookkeeping needed.
 
    The target is the space's own content in the sidebar - folders, tabs,
-   pinned items - not the web page. Blurring #tabbrowser-tabpanels was wrong:
-   the page is not what changes when you switch spaces.
+   pinned items - not the web page. The page is not what changes when you
+   switch spaces.
 
-   In is quicker than out on purpose: the blur has to be there before the swap
-   lands, while the reveal can afford to breathe. */
+   This is a one-shot animation rather than a filter held while the attribute
+   is present, and that is deliberate. Both attributes can outlive the gesture:
+   `swipe-gesture` is cleared from an event callback that a cancelled gesture
+   never fires, and `animating-background` is cleared only after an awaited
+   Promise.race (ZenSpaceManager.mjs:2145), so anything throwing before that
+   leaves it set. Held as a state, the blur got stuck on the sidebar. As an
+   animation it always runs to its own end and clears itself, whatever the
+   attribute does afterwards.
+
+   It does not follow the swipe. Zen computes the gesture delta internally and
+   hands it straight to _organizeWorkspaceStripLocations without publishing it
+   anywhere, so there is nothing for CSS to read - tracking progress would mean
+   patching ZenSpacesSwipe, which is not worth the fragility. */
 
 @media -moz-pref("mod.safari.space-switch-blur") {
   :root {
@@ -349,20 +377,26 @@
     --safari-space-out: 0.32s;
   }
 
-  #tabbrowser-tabs zen-workspace {
-    transition: filter var(--safari-space-out) ease-out !important;
+  @keyframes safari-space-blur {
+    0% {
+      filter: blur(0);
+    }
+    35% {
+      filter: blur(var(--safari-space-blur));
+    }
+    100% {
+      filter: blur(0);
+    }
   }
 
   :root:is([swipe-gesture], [animating-background]) #tabbrowser-tabs zen-workspace {
-    filter: blur(var(--safari-space-blur));
-    transition: filter var(--safari-space-in) ease-in !important;
+    animation: safari-space-blur
+      calc(var(--safari-space-in) + var(--safari-space-out)) ease-out;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    #tabbrowser-tabs zen-workspace,
     :root:is([swipe-gesture], [animating-background]) #tabbrowser-tabs zen-workspace {
-      filter: none !important;
-      transition: none !important;
+      animation: none !important;
     }
   }
 }
