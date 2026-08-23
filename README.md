@@ -1,4 +1,4 @@
-<img width="685" height="407" alt="image" src="https://github.com/user-attachments/assets/217cd074-300f-4893-987f-3f23704b3ee3" />
+<img width="1123" height="810" alt="banner" src="https://github.com/user-attachments/assets/48cb8d77-b43c-4da4-a81b-272b81dd38ab" />
 
 # Safari-like Zen
 
