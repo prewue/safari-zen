@@ -1,40 +1,11 @@
 [
   {
-    "property": "zen.theme.acrylic-elements",
-    "label": "🪟 Native translucent sidebar (Zen acrylic) — restart required",
-    "type": "checkbox",
-    "defaultValue": true
-  },
-  {
-    "property": "mod.safari.acrylic-tune",
-    "label": "🎨 Blur Sidebar Background (Acryllic Filter)",
-    "type": "checkbox",
-    "defaultValue": true
-  },
-  {
-    "property": "mod.safari.acrylic-blur",
-    "label": "🌫️ Sidebar blur radius",
-    "type": "string",
-    "defaultValue": "24px",
-    "placeholder": "24px"
-  },
-  {
-    "property": "mod.safari.acrylic-saturation",
-    "label": "🎨 Sidebar blur saturation",
-    "type": "string",
-    "defaultValue": "150%",
-    "placeholder": "150%"
-  },
-  {
-    "property": "mod.safari.acrylic-tint",
-    "label": "🎨 How much of your theme gradient stays on top of the blur (0–1)",
-    "type": "string",
-    "defaultValue": "1",
-    "placeholder": "1"
+    "type": "separator",
+    "label": "Window"
   },
   {
     "property": "mod.safari.window-radius",
-    "label": "🖥️ Custom window corner radius (macOS only — needs a restart)",
+    "label": "🖥️ Native window corner radius (macOS only — needs a restart)",
     "type": "checkbox",
     "defaultValue": true
   },
@@ -45,8 +16,84 @@
     "defaultValue": true
   },
   {
+    "type": "separator",
+    "label": "Sidebar layout"
+  },
+  {
+    "property": "mod.safari.sidebar-float",
+    "label": "↔️ Outer padding — float the sidebar off the window edge",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "property": "mod.safari.sidebar-padding",
+    "label": "↕️ Inner padding — tighter spacing inside the sidebar",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "property": "mod.safari.sidebar-radius",
+    "label": "⬜ Sidebar corner radius",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "type": "separator",
+    "label": "Sidebar background"
+  },
+  {
+    "property": "zen.theme.acrylic-elements",
+    "label": "🪟 Native translucent sidebar (Zen acrylic) — needs a restart",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "property": "mod.safari.acrylic-tune",
+    "label": "🎨 Blur Sidebar Background (Acryllic Filter)",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "type": "separator",
+    "label": "Controls"
+  },
+  {
+    "property": "mod.safari.glass-controls",
+    "label": "🔍 Liquid glass search field and active tab",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "type": "separator",
+    "label": "Animation"
+  },
+  {
     "property": "mod.safari.sidebar-animation",
-    "label": "✨ Premium sidebar reveal animation (light spring)",
+    "label": "✨ Sidebar reveal — spring in, blur and fade out",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "property": "mod.safari.folder-motion",
+    "label": "📁 Folder open and close — synced icon, spring, scales with size",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "property": "mod.safari.pinned-collapse-motion",
+    "label": "📌 Hiding the pinned tabs section",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "property": "mod.safari.tab-button-fade",
+    "label": "❌ Close and reset buttons on a tab — blur in and out",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "property": "mod.safari.space-switch-blur",
+    "label": "🌀 Blur the page while switching spaces",
     "type": "checkbox",
     "defaultValue": true
   }

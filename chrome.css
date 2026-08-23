@@ -3,23 +3,29 @@
    corner radius to 26 (the Tahoe system default). */
 
 /* 1. Outer padding of the sidebar from the window edge. */
-#navigator-toolbox {
-  --zen-compact-float: 22px !important;
+@media -moz-pref("mod.safari.sidebar-float") {
+  #navigator-toolbox {
+    --zen-compact-float: 22px !important;
+  }
 }
 
 /* 2. Sidebar corner radius. */
-:root {
-  --zen-border-radius: 20px !important;
+@media -moz-pref("mod.safari.sidebar-radius") {
+  :root {
+    --zen-border-radius: 20px !important;
+  }
 }
 
 /* 3. Padding inside the sidebar.
    Same selector Zen uses for the compact-mode titlebar, with explicit
    per-side values instead of the uniform var(--zen-toolbox-padding). */
-:root[zen-compact-mode="true"]:not([customizing]):not([inDOMFullscreen="true"]) {
-  @media -moz-pref("zen.view.compact.hide-tabbar") or -moz-pref("zen.view.use-single-toolbar") {
-    &:not([zen-compact-animating]) {
-      & #navigator-toolbox:not([animate="true"]) #titlebar {
-        padding: 2px 8px 8px 8px !important;
+@media -moz-pref("mod.safari.sidebar-padding") {
+  :root[zen-compact-mode="true"]:not([customizing]):not([inDOMFullscreen="true"]) {
+    @media -moz-pref("zen.view.compact.hide-tabbar") or -moz-pref("zen.view.use-single-toolbar") {
+      &:not([zen-compact-animating]) {
+        & #navigator-toolbox:not([animate="true"]) #titlebar {
+          padding: 2px 8px 8px 8px !important;
+        }
       }
     }
   }
@@ -37,23 +43,8 @@
        That brightness is a dark-mode hardcode — in light mode it crushes the
        sidebar to near-black. Rebuild the filter without it. */
     backdrop-filter:
-      blur(var(--mod-safari-acrylic-blur, 24px))
-      saturate(var(--mod-safari-acrylic-saturation, 150%)) !important;
-
-    /* Scale the theme gradient sitting on top of the blur, without breaking
-       Zen's workspace crossfade: ::after is the incoming theme and ::before the
-       outgoing one, and their opacities have to keep summing the same way. */
-    &::after {
-      opacity: calc(
-        var(--zen-background-opacity) * var(--mod-safari-acrylic-tint, 1)
-      ) !important;
-    }
-
-    &::before {
-      opacity: calc(
-        (1 - var(--zen-background-opacity)) * var(--mod-safari-acrylic-tint, 1)
-      ) !important;
-    }
+      blur(24px)
+      saturate(150%) !important;
   }
 }
 
@@ -91,6 +82,12 @@
     );
     --safari-close-time: 0.30s;
     --safari-close-ease: cubic-bezier(0.45, 0, 0.7, 0.55);
+
+    /* How much the panel dissolves on its way out. Applied on close only:
+       the open rule below resets both without transitioning them, so the
+       sidebar snaps sharp the moment it is revealed. */
+    --safari-close-blur: 3px;
+    --safari-close-opacity: 0.35;
   }
 
   /* Closing. Lower specificity than the opening rule below, so that one wins
@@ -99,7 +96,11 @@
     transition:
       left var(--safari-close-time) var(--safari-close-ease),
       right var(--safari-close-time) var(--safari-close-ease),
-      visibility var(--safari-close-time) var(--safari-close-ease) !important;
+      visibility var(--safari-close-time) var(--safari-close-ease),
+      filter var(--safari-close-time) var(--safari-close-ease),
+      opacity var(--safari-close-time) var(--safari-close-ease) !important;
+    filter: blur(var(--safari-close-blur));
+    opacity: var(--safari-close-opacity);
   }
 
   /* Zen keeps companion elements in sync with the toolbox by hand — see
@@ -128,6 +129,11 @@
     transition:
       left var(--safari-open-time) var(--safari-open-ease),
       right var(--safari-open-time) var(--safari-open-ease) !important;
+
+    /* `none` rather than blur(0): a non-none filter would keep a stacking
+       context and a containing block around the toolbox for no reason. */
+    filter: none;
+    opacity: 1;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -140,6 +146,219 @@
         left 0.12s ease-out,
         right 0.12s ease-out,
         visibility 0.12s ease-out !important;
+      filter: none !important;
+      opacity: 1 !important;
+    }
+  }
+}
+
+/* 6. Search field and active tab.
+   Values come from the ZenSidebar design and were verified by sampling the
+   exported PNG, so they are the design's numbers rather than eyeballed ones:
+
+     edge gradient    left 14.9% -> 7.8% at 50% -> right 25.1%   (horizontal)
+     search fill      top 5.1% -> bottom 10.2%                   (vertical)
+     active tab fill  flat 9%
+     dark inner glow  0 -4px 8px white 7%
+     light drop shad. 0 4px 7px black 5.9%
+
+   Two implementation notes. The stroke is outer-aligned in the design, so it
+   is drawn by an ::after at inset -1px rather than a border, which would
+   change the element's metrics; ::before is already taken on both elements by
+   Zen (vertical-tabs.css:1239, smartbar.css:80). And everything switches
+   through light-dark() alone, the same mechanism Zen uses throughout its own
+   stylesheets, so the theme never has to be detected twice in two ways. */
+
+@media -moz-pref("mod.safari.glass-controls") {
+  :root {
+    /* Light mode has no gradient on the stroke in the design, so its three
+       stops are simply identical. */
+    --safari-edge: linear-gradient(
+      to right,
+      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.149)) 0%,
+      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.078)) 50%,
+      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.251)) 100%
+    );
+
+    /* The active tab is meant to stay exactly as Zen ships it in light mode,
+       so its edge fades out entirely there. */
+    --safari-tab-edge: linear-gradient(
+      to right,
+      light-dark(transparent, rgba(255, 255, 255, 0.149)) 0%,
+      light-dark(transparent, rgba(255, 255, 255, 0.078)) 50%,
+      light-dark(transparent, rgba(255, 255, 255, 0.251)) 100%
+    );
+  }
+
+  /* Outer 1px stroke, shared geometry. */
+  #urlbar:not([breakout-extend]) > .urlbar-background::after,
+  .tabbrowser-tab[visuallyselected] > .tab-stack > .tab-background::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  #urlbar:not([breakout-extend]) > .urlbar-background::after {
+    background: var(--safari-edge);
+  }
+
+  .tabbrowser-tab[visuallyselected] > .tab-stack > .tab-background::after {
+    background: var(--safari-tab-edge);
+  }
+
+  /* Search field. Both shadows are declared at once and the one that does not
+     belong to the current scheme is made transparent, because `inset` itself
+     cannot be switched by light-dark(). */
+  #urlbar:not([breakout-extend]) > .urlbar-background {
+    background: linear-gradient(
+      to bottom,
+      light-dark(rgba(0, 0, 0, 0.051), rgba(255, 255, 255, 0.051)),
+      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.102))
+    ) !important;
+    box-shadow:
+      inset 0 -4px 8px light-dark(transparent, rgba(255, 255, 255, 0.07)),
+      0 4px 7px light-dark(rgba(0, 0, 0, 0.059), transparent) !important;
+  }
+
+  /* Active tab. In light mode this resolves back to Zen's own selected-tab
+     colour, leaving it untouched. .tab-background is statically positioned,
+     so it needs to become a containing block for the stroke above. */
+  .tabbrowser-tab[visuallyselected] > .tab-stack > .tab-background {
+    position: relative;
+    background: light-dark(
+      var(--tab-background-color-selected),
+      rgba(255, 255, 255, 0.09)
+    ) !important;
+  }
+}
+
+/* 7. Tab hover buttons.
+   Zen reveals the close and reset buttons with `display` alone
+   (vertical-tabs.css:672-681 and :902-906), which normally cannot animate.
+   `transition-behavior: allow-discrete` keeps the element displayed for the
+   duration so it can fade out first, and `@starting-style` gives it a state
+   to animate from on the way in. Firefox ships both in its own chrome CSS
+   (tabs.css:1127, fullscreen-and-pointerlock.css:67), so they are available.
+
+   The two hidden-state selectors below are exact complements of Zen's own
+   reveal conditions — close on `:hover` or `[multiselected][selected]`, reset
+   on `:hover` or `[visuallyselected]` — so no button that Zen keeps visible
+   can end up faded out. */
+
+@media -moz-pref("mod.safari.tab-button-fade") {
+  :root {
+    --safari-tabbtn-time: 0.16s;
+    --safari-tabbtn-blur: 4px;
+  }
+
+  .tabbrowser-tab :is(.tab-close-button, .tab-reset-button) {
+    transition:
+      opacity var(--safari-tabbtn-time) ease,
+      filter var(--safari-tabbtn-time) ease,
+      display var(--safari-tabbtn-time) allow-discrete !important;
+
+    @starting-style {
+      opacity: 0;
+      filter: blur(var(--safari-tabbtn-blur));
+    }
+  }
+
+  .tabbrowser-tab:not(:hover):not([multiselected][selected]) .tab-close-button,
+  .tabbrowser-tab:not(:hover):not([visuallyselected]) .tab-reset-button {
+    opacity: 0;
+    filter: blur(var(--safari-tabbtn-blur));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tabbrowser-tab :is(.tab-close-button, .tab-reset-button) {
+      transition: none !important;
+      filter: none !important;
+    }
+  }
+}
+
+/* 8. Space switching.
+   Zen marks the transition on the root: `swipe-gesture` is set while the
+   gesture is in progress (ZenSpacesSwipe.mjs:107, cleared in
+   onSwipeGestureAnimationEnd) and `animating-background` while the change
+   itself animates (ZenSpaceManager.mjs:1868/1978, cleared at :2149). The
+   actual tab swap happens between those two, so a single blur driven off both
+   attributes reads as the old space blurring out and the new one arriving out
+   of focus — no per-space bookkeeping needed.
+
+   In is quicker than out on purpose: the blur has to be there before the swap
+   lands, while the reveal can afford to breathe. */
+
+@media -moz-pref("mod.safari.space-switch-blur") {
+  :root {
+    --safari-space-blur: 6px;
+    --safari-space-in: 0.16s;
+    --safari-space-out: 0.32s;
+  }
+
+  #tabbrowser-tabpanels {
+    transition: filter var(--safari-space-out) ease-out !important;
+  }
+
+  :root:is([swipe-gesture], [animating-background]) #tabbrowser-tabpanels {
+    filter: blur(var(--safari-space-blur));
+    transition: filter var(--safari-space-in) ease-in !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #tabbrowser-tabpanels,
+    :root:is([swipe-gesture], [animating-background]) #tabbrowser-tabpanels {
+      filter: none !important;
+      transition: none !important;
+    }
+  }
+}
+
+/* 9. Folder and space chevron timing.
+   Zen runs three different timings for what is one gesture: folder contents
+   0.12s easeInOut from JS (ZenFolders.mjs:1467/1537), the folder icon 0.3s
+   from CSS (zen-folders.css:120), the space chevron 0.1s
+   (zen-workspaces.css:695). The icon finishing 2.5x after the thing it
+   represents is the most visible part of it.
+
+   folder-motion.uc.mjs computes one duration per gesture, scaled by how much
+   content is actually moving, and publishes it plus the easing as
+   --safari-folder-time / --safari-folder-ease. Everything below rides those,
+   so icon, chevron and content start and land together. The fallbacks apply
+   only if the script has not run yet. */
+
+@media -moz-pref("mod.safari.folder-motion") {
+  zen-folder .tab-group-folder-icon svg *,
+  zen-folder svg * {
+    transition:
+      transform var(--safari-folder-time, 0.24s) var(--safari-folder-ease, ease-out),
+      opacity var(--safari-folder-time, 0.24s) var(--safari-folder-ease, ease-out) !important;
+  }
+
+  .zen-current-workspace-indicator-chevron {
+    transition:
+      transform var(--safari-folder-time, 0.24s) var(--safari-folder-ease, ease-out),
+      opacity calc(var(--safari-folder-time, 0.24s) * 0.6) linear !important;
+  }
+
+  /* The section is height-animated by the script, so it must not also be
+     hard-clipped mid-flight. */
+  zen-workspace[collapsedpinnedtabs] .zen-workspace-pinned-tabs-section {
+    overflow-y: clip;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    zen-folder svg *,
+    .zen-current-workspace-indicator-chevron {
+      transition: none !important;
     }
   }
 }

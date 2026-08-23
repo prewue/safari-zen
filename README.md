@@ -43,25 +43,51 @@ doesn't bounce. Respects the system "reduce motion" setting.
 
 ## Settings
 
-Open **Settings → Mods → Safari-like Zen**.
+Everything is a plain on/off switch, grouped in **Settings → Mods → Safari-like
+Zen**. There are no values to tune — the point is one coherent Safari-like look,
+not a customiser.
 
-| Setting | Default | What it does |
-|---|---|---|
-| Native translucent sidebar | On | Makes the sidebar see-through |
-| Blur Sidebar Background (Acryllic Filter) | On | Blurs what's behind the sidebar |
-| Sidebar blur radius | `24px` | How soft the blur is |
-| Sidebar blur saturation | `150%` | How vivid colours stay through the blur |
-| Theme gradient on top of the blur | `1` | How much of your theme colour shows, `0`–`1` |
-| Flush content edges | On | Removes the gap between the page and the window |
-| Custom window corner radius | On | Rounds the window corners (macOS only) |
-| Premium sidebar reveal animation | On | The spring slide-in |
+**Window**
 
-Two of these — **Native translucent sidebar** and **Custom window corner
-radius** — are only applied at startup. After changing either one, fully quit
-Zen (**⌘Q**) and reopen it.
+| Setting | What it does |
+|---|---|
+| Native window corner radius | Rounds the window using macOS's own shape (macOS only) |
+| Flush content edges | Removes the gap between the page and the window |
 
-**Custom window corner radius** is macOS only and does nothing on other
-platforms.
+**Sidebar layout**
+
+| Setting | What it does |
+|---|---|
+| Outer padding | Floats the sidebar off the window edge |
+| Inner padding | Tighter spacing inside the sidebar |
+| Sidebar corner radius | Rounds the sidebar panel |
+
+**Sidebar background**
+
+| Setting | What it does |
+|---|---|
+| Native translucent sidebar | Zen's own translucency |
+| Blur Sidebar Background | Blurs what sits behind the sidebar |
+
+**Controls**
+
+| Setting | What it does |
+|---|---|
+| Liquid glass search field and active tab | Gradient fill, gradient edge and depth on both |
+
+**Animation**
+
+| Setting | What it does |
+|---|---|
+| Sidebar reveal | Springs in, blurs and fades on the way out |
+| Folder open and close | Icon, chevron and contents move as one, scaled to folder size |
+| Hiding the pinned tabs section | Animates instead of cutting |
+| Close and reset buttons on a tab | Blur in and out on hover |
+| Blur the page while switching spaces | Old space blurs out, the new one arrives out of focus |
+
+Two of these — **Native window corner radius** and **Native translucent
+sidebar** — are only read at startup. After changing either, fully quit Zen
+(**⌘Q**) and reopen it.
 
 To change how round the window corners are, edit `RADIUS` in
 `window-radius.uc.mjs`. Useful values are `26`, `20`, `15` and `10`.
