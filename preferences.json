@@ -59,7 +59,7 @@
   },
   {
     "property": "mod.safari.glass-controls",
-    "label": "🔍 Liquid glass search field and active tab",
+    "label": "🔍 Liquid glass search field",
     "type": "checkbox",
     "defaultValue": true
   },
@@ -69,7 +69,7 @@
   },
   {
     "property": "mod.safari.sidebar-animation",
-    "label": "✨ Sidebar reveal — spring in, blur and fade out",
+    "label": "✨ Sidebar reveal — springs in, slides out",
     "type": "checkbox",
     "defaultValue": true
   },
@@ -87,7 +87,7 @@
   },
   {
     "property": "mod.safari.space-switch-blur",
-    "label": "🌀 Blur the page while switching spaces",
+    "label": "🌀 Blur the space you are leaving while swiping",
     "type": "checkbox",
     "defaultValue": true
   }

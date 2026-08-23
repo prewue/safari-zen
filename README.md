@@ -37,9 +37,12 @@ a 20px corner radius and tighter internal padding, so it reads as a panel rather
 than a docked strip. The page itself sits flush against the window, with no gap
 around it.
 
-**Spring reveal animation.** Hovering the edge slides the sidebar in with a
-light spring that overshoots slightly and settles. Closing is quicker and
-doesn't bounce. Respects the system "reduce motion" setting.
+**Considered motion.** Hovering the edge slides the sidebar in with a light
+spring that overshoots slightly and settles; closing is quicker and doesn't
+bounce. Folders open with their icon and chevron on the same timing, scaled to
+how much content is moving. Tab hover fades in. Swiping between spaces blurs
+the one you are leaving, in step with your finger. All of it respects the
+system "reduce motion" setting.
 
 ## Settings
 
@@ -73,16 +76,16 @@ not a customiser.
 
 | Setting | What it does |
 |---|---|
-| Liquid glass search field and active tab | Gradient fill, gradient edge and depth on both |
+| Liquid glass search field | Gradient fill, gradient edge and inner depth |
 
 **Animation**
 
 | Setting | What it does |
 |---|---|
-| Sidebar reveal | Springs in, blurs and fades on the way out |
+| Sidebar reveal | Springs in, slides out |
 | Folder open and close | Icon, chevron and contents move as one, scaled to folder size |
 | Tab hover | Background and the close/reset buttons fade in together |
-| Blur the page while switching spaces | Old space blurs out, the new one arrives out of focus |
+| Blur the space you are leaving while swiping | Follows the gesture; the space arriving stays sharp |
 
 Two of these — **Native window corner radius** and **Native translucent
 sidebar** — are only read at startup. After changing either, fully quit Zen

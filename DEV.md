@@ -233,7 +233,38 @@ at the start of the slide.
 
 ---
 
-## 5. Dead end: native `NSGlassEffectView`
+## 5. Space swipe progress
+
+Zen never publishes how far a space swipe has travelled. `_handleSwipeUpdate`
+computes the offset and passes it straight to
+`_organizeWorkspaceStripLocations(workspace, justMove, offsetPixels)` as the
+third argument, so wrapping that method is the only place the number is
+readable. `folder-motion.uc.mjs` normalises it against the same strip width
+`ZenSpacesSwipe` measures — `#navigator-toolbox` plus `#zen-sidebar-splitter` —
+and writes it to `--safari-space-progress`.
+
+Driving the blur off the attributes alone does not work, in either direction:
+
+- `swipe-gesture` goes up the moment the fingers land and stays up for the
+  whole drag, so it says nothing about distance and only produces a flash.
+- `animating-background` covers the tail, and is cleared only after an awaited
+  `Promise.race` (`ZenSpaceManager.mjs:2145`), so anything throwing before that
+  leaves it set and the blur stuck.
+
+Two resets are therefore mandatory. `active` moves to the new space *while*
+`swipe-gesture` is still up (`ZenSpace.mjs:308`), so an observer on that
+attribute zeroes the progress the instant a space stops being the one you are
+leaving — otherwise the space already in view keeps the last progress value and
+stays blurred. A watchdog zeroes it too, for a gesture that never fires its end
+callback.
+
+`--safari-space-track` is the blur's own transition duration: `0s` while a
+finger is driving it, so the blur is locked to the movement, and a real
+duration on commit so the reset eases rather than snaps.
+
+---
+
+## 6. Dead end: native `NSGlassEffectView`
 
 Fully explored and **abandoned**. Do not retry from a mod.
 
@@ -296,7 +327,7 @@ ToolbarWindow
 
 ---
 
-## 6. Platform scope
+## 7. Platform scope
 
 Only the window corner radius is macOS-specific — it shells out to
 `/usr/bin/defaults` and self-guards on `Services.appinfo.OS === "Darwin"`. The
@@ -316,7 +347,7 @@ Both compare against `ucAPI.utils.os`, which is `AppConstants.platform.slice(0, 
 
 ---
 
-## 7. Method notes
+## 8. Method notes
 
 Useful techniques if any of this needs re-verifying:
 

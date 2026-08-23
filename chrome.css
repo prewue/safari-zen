@@ -140,22 +140,21 @@
   }
 }
 
-/* 6. Search field and active tab.
+/* 6. Search field.
    Values come from the ZenSidebar design and were verified by sampling the
-   exported PNG, so they are the design's numbers rather than eyeballed ones:
+   exported PNG, so they are the design's numbers rather than eyeballed ones,
+   each since lowered by two points:
 
-     edge gradient    left 14.9% -> 7.8% at 50% -> right 25.1%   (horizontal)
-     search fill      top 5.1% -> bottom 10.2%                   (vertical)
-     active tab fill  flat 9%
-     dark inner glow  0 -4px 8px white 7%
+     edge gradient    left 15% -> 8% at 50% -> right 25%   (horizontal)
+     fill             top 5.1% -> bottom 10.2%             (vertical)
+     dark inner glow  0 -4px 8px white 5%
      light drop shad. 0 4px 7px black 5.9%
 
-   Two implementation notes. The stroke is outer-aligned in the design, so it
-   is drawn by an ::after at inset -1px rather than a border, which would
-   change the element's metrics; ::before is already taken on both elements by
-   Zen (vertical-tabs.css:1239, smartbar.css:80). And everything switches
-   through light-dark() alone, the same mechanism Zen uses throughout its own
-   stylesheets, so the theme never has to be detected twice in two ways. */
+   The stroke is outer-aligned in the design, so it is drawn by an ::after at
+   inset -1px rather than a border, which would change the field's metrics.
+   ::before is already taken here by Zen (smartbar.css:80). Light and dark
+   switch through light-dark() alone, the mechanism Zen uses throughout its own
+   stylesheets. */
 
 @media -moz-pref("mod.safari.glass-controls") {
   :root {
@@ -163,40 +162,20 @@
        stops are simply identical. */
     --safari-edge: linear-gradient(
       to right,
-      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.17)) 0%,
-      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.10)) 50%,
-      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.27)) 100%
-    );
-
-    /* Three attempts at detecting "is this dark" all failed, for three
-       different reasons: light-dark() reads .tab-background's own
-       color-scheme, which resolves light; zen-should-be-dark-mode only exists
-       while the workspace carries a gradient theme; and zen.view.window.scheme
-       is 1 (light) on a setup whose sidebar still looks dark, because the dark
-       comes from the theme gradient, not from the scheme.
-
-       So stop detecting. --toolbox-textcolor already tracks whatever the
-       sidebar actually looks like - light text on a dark sidebar, dark text on
-       a light one - and Zen derives --zen-toolbar-element-bg from it the same
-       way (zen-theme.css:143). Mixing against it cannot disagree with what is
-       on screen. */
-    --safari-tab-edge: linear-gradient(
-      to right,
-      color-mix(in oklch, var(--toolbox-textcolor) 17%, transparent) 0%,
-      color-mix(in oklch, var(--toolbox-textcolor) 10%, transparent) 50%,
-      color-mix(in oklch, var(--toolbox-textcolor) 27%, transparent) 100%
+      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.15)) 0%,
+      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.08)) 50%,
+      light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.25)) 100%
     );
   }
 
-  /* Outer 1px stroke, shared geometry. */
-  #urlbar:not([breakout-extend]) > .urlbar-background::after,
-  .tabbrowser-tab[visuallyselected]:not([zen-essential="true"])
-    > .tab-stack > .tab-background::after {
+  /* The outer 1px stroke. */
+  #urlbar:not([breakout-extend]) > .urlbar-background::after {
     content: "";
     position: absolute;
     inset: -1px;
     border-radius: inherit;
     padding: 1px;
+    background: var(--safari-edge);
     -webkit-mask:
       linear-gradient(#000 0 0) content-box,
       linear-gradient(#000 0 0);
@@ -205,18 +184,9 @@
     pointer-events: none;
   }
 
-  #urlbar:not([breakout-extend]) > .urlbar-background::after {
-    background: var(--safari-edge);
-  }
-
-  .tabbrowser-tab[visuallyselected]:not([zen-essential="true"])
-    > .tab-stack > .tab-background::after {
-    background: var(--safari-tab-edge);
-  }
-
-  /* Search field. Both shadows are declared at once and the one that does not
-     belong to the current scheme is made transparent, because `inset` itself
-     cannot be switched by light-dark(). */
+  /* Both shadows are declared at once and the one that does not belong to the
+     current scheme is made transparent, because `inset` itself cannot be
+     switched by light-dark(). */
   #urlbar:not([breakout-extend]) > .urlbar-background {
     background: linear-gradient(
       to bottom,
@@ -224,18 +194,9 @@
       light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.102))
     ) !important;
     box-shadow:
-      inset 0 -4px 8px light-dark(transparent, rgba(255, 255, 255, 0.07)),
+      inset 0 -4px 8px light-dark(transparent, rgba(255, 255, 255, 0.05)),
       0 4px 7px light-dark(rgba(0, 0, 0, 0.059), transparent) !important;
   }
-
-  /* Active tab. .tab-background is statically positioned, so it has to become
-     a containing block for the stroke above. The fill is mixed from the same
-     text colour, which lands near the design's 9% white on a dark sidebar. */
-  .tabbrowser-tab[visuallyselected] > .tab-stack > .tab-background {
-    position: relative;
-    background: color-mix(in oklch, var(--toolbox-textcolor) 9%, transparent) !important;
-  }
-
 }
 
 /* 7. Tab hover.
@@ -312,11 +273,10 @@
    whole drag, while `animating-background` covers only the tail. Neither
    describes how far you have actually pulled.
 
-   The two spaces move in opposite directions at once: the one you are leaving
-   blurs as you pull away, the one arriving comes out of blur. `[active]` is
-   the right discriminator because Zen only flips it once the change actually
-   commits (ZenSpace.mjs:308), so for the whole gesture it still marks the
-   source.
+   Only the space you are leaving blurs. `[active]` is the right discriminator
+   because Zen only flips it once the change actually commits
+   (ZenSpace.mjs:308), so for the whole gesture it still marks the source and
+   the space arriving is never touched.
 
    The blur transition is itself a variable. While a finger is driving it the
    script holds --safari-space-track at 0s, so the blur is locked to the
@@ -338,24 +298,15 @@
     transition: filter var(--safari-space-out) ease-out !important;
   }
 
-  /* Leaving: sharp at rest, blurring as you pull away. */
+  /* Sharp at rest, blurring as you pull away from it. */
   :root[swipe-gesture] #tabbrowser-tabs zen-workspace[active] {
     filter: blur(calc(var(--safari-space-progress, 0) * var(--safari-space-blur)));
     transition: filter var(--safari-space-track, 0s) linear !important;
   }
 
-  /* Arriving: starts blurred off-screen and sharpens as it comes in. */
-  :root[swipe-gesture] #tabbrowser-tabs zen-workspace:not([active]) {
-    filter: blur(
-      calc((1 - var(--safari-space-progress, 0)) * var(--safari-space-blur))
-    );
-    transition: filter var(--safari-space-track, 0s) linear !important;
-  }
-
   @media (prefers-reduced-motion: reduce) {
     #tabbrowser-tabs zen-workspace,
-    :root[swipe-gesture] #tabbrowser-tabs zen-workspace[active],
-    :root[swipe-gesture] #tabbrowser-tabs zen-workspace:not([active]) {
+    :root[swipe-gesture] #tabbrowser-tabs zen-workspace[active] {
       filter: none !important;
       transition: none !important;
     }
