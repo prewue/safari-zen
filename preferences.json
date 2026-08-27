@@ -65,6 +65,26 @@
   },
   {
     "type": "separator",
+    "label": "Pinned sidebar (experimental)"
+  },
+  {
+    "property": "mod.safari.pinned-panel",
+    "label": "📌 Pinned sidebar as compact — the same floating panel, always visible",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "type": "separator",
+    "label": "Site colour (experimental)"
+  },
+  {
+    "property": "mod.safari.site-accent",
+    "label": "🎨 Sidebar follows the site — the site's accent colour, cross-fading between pages. Overrides your Zen theme colour on the sidebar.",
+    "type": "checkbox",
+    "defaultValue": true
+  },
+  {
+    "type": "separator",
     "label": "Animation"
   },
   {

@@ -1,8 +1,8 @@
 {
   "id": "safari-zen",
   "name": "Safari-like Zen",
-  "description": "Makes Zen feel like Safari on macOS: native window corner radius, a translucent blurred sidebar, Safari-matched sidebar padding, and a spring reveal animation.",
-  "version": "1.5.0",
+  "description": "Makes Zen feel like Safari on macOS: native window corner radius, a translucent blurred sidebar, Safari-matched sidebar padding, a spring reveal animation, an optional pinned sidebar panel that wears compact mode's float, and a sidebar that follows the current site's colour.",
+  "version": "1.6.0",
   "author": "prewue",
   "homepage": "https://github.com/prewue/safari-zen",
   "readme": "https://raw.githubusercontent.com/prewue/safari-zen/main/README.md",
@@ -12,6 +12,7 @@
     "macos",
     "safari",
     "sidebar",
+    "pinned",
     "animations",
     "chrome"
   ],
@@ -26,6 +27,20 @@
     "window-radius.uc.mjs": {
       "name": "Startup script",
       "description": "Applies the native macOS window corner radius and removes the content separation.",
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ]
+    },
+    "page-canvas.uc.mjs": {
+      "name": "Page canvas colour",
+      "description": "Samples the current page's background colour so the gap around the pinned sidebar panel reads as page rather than as the workspace gradient.",
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ]
+    },
+    "site-accent.uc.mjs": {
+      "name": "Site accent colour",
+      "description": "Takes the current site's accent colour from its favicon, its theme-color or its canvas, and gives it to the sidebar.",
       "include": [
         "chrome://browser/content/browser.xhtml"
       ]

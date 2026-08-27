@@ -37,6 +37,27 @@ a 20px corner radius and tighter internal padding, so it reads as a panel rather
 than a docked strip. The page itself sits flush against the window, with no gap
 around it.
 
+**Pinned sidebar with the compact panel.** Turn Zen's compact mode *off* and the
+sidebar keeps compact's look — the floating rounded panel with the blur and the
+shadow — while staying put. The page sits beside it rather than underneath, and
+the splitter still resizes it, neither of which compact allows. The gap around
+the panel is painted with the current page's own background colour — reported
+by the page in the frame it appears — and so is the area behind the page while
+it loads, so the whole window reads as one surface and the colour never lands
+in the gap before the page arrives. The panel reads as floating on the page the
+way it does in compact instead of being framed by the workspace gradient.
+Compact mode itself is untouched: switch it back on and the hover reveal works
+exactly as before.
+
+**Sidebar follows the site.** The sidebar takes the colour of the site you are
+on and cross-fades to the next one as you move between pages — in compact mode
+and pinned mode alike. The colour comes from the favicon where it has one, from
+the site's own `theme-color` where it declares one, and from the page background
+otherwise; a page with no colour of its own fades back to your workspace theme.
+Brand colours are normalised into the same lightness your theme already uses, so
+a red site does not turn the sidebar into a warning label. This one replaces
+your Zen theme colour on the sidebar while it is on.
+
 **Considered motion.** Hovering the edge slides the sidebar in with a light
 spring that overshoots slightly and settles; closing is quicker and doesn't
 bounce. Folders open with their icon and chevron on the same timing, scaled to
@@ -77,6 +98,18 @@ not a customiser.
 | Setting | What it does |
 |---|---|
 | Liquid glass search field | Gradient fill, gradient edge and inner depth |
+
+**Pinned sidebar (experimental)**
+
+| Setting | What it does |
+|---|---|
+| Pinned sidebar as compact | Gives the always-visible sidebar compact mode's floating panel. Only applies while compact mode is off |
+
+**Site colour (experimental)**
+
+| Setting | What it does |
+|---|---|
+| Sidebar follows the site | Takes the current site's accent colour, cross-fading between pages. Works in both compact and pinned mode. Overrides your Zen theme colour on the sidebar |
 
 **Animation**
 
