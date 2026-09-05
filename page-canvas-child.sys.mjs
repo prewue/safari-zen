@@ -8,43 +8,50 @@
 //          document long before the compositor shows it. The content process
 //          does know: MozAfterPaint on the window root fires once a paint has
 //          been composited. That is the in-tree pattern for "the page is now
-//          visible" - LoginManagerChild.sys.mjs:1707-1773 gates its first form
-//          fill on exactly this, and DOMFullscreenChild.sys.mjs:124-156 uses it
-//          to report a finished transition. dom.send_after_paint_to_content is
-//          irrelevant here: it withholds the event from web-page JS, not from
-//          privileged listeners in the content process.
+//          visible" - LoginManagerChild.sys.mjs gates its first form fill on
+//          exactly this, and DOMFullscreenChild.sys.mjs uses it to report a
+//          finished transition.
 //
-//   what   The colour actually showing at the left edge, resolved from layout
-//          rather than from pixels. At three points down the edge,
-//          elementsFromPoint gives the stack of boxes under that point, and the
-//          first one with an opaque background is what the eye sees there. The
-//          modal value of the three wins, as it did with pixels. This is
-//          deliberately not the CSS canvas colour: a great many apps leave
-//          <body> white and paint their dark root <div> over it, and the
-//          canvas is then a colour nobody sees. Reading layout rather than
-//          pixels is what keeps it steady - a box's background changes only
-//          when the page restyles it, not when an image loads or a video plays
-//          inside it - and cheap enough to do on every paint of a load.
+//   what   The surface the sidebar panel floats beside: the colour showing at
+//          the page's edge on the sidebar's side, resolved from layout rather
+//          than from pixels. At three points down that edge, elementsFromPoint
+//          gives the stack of boxes under the point, and the topmost one with an
+//          opaque background *that spans the viewport's height* is the surface.
+//
+// The height test is what keeps the answer still on a live page. Without it
+// the first opaque box under a point is whatever the page put there - a list
+// row scrolling past, a hover highlight, a toast - and the colour followed
+// every one of them: measured on one page, nine changes in seven seconds
+// between the canvas and a row colour. A box that spans the viewport is a
+// surface (the canvas, an app root, a sidebar, a drawer), and a surface only
+// changes colour when the page restyles it. <html> and <body> count as
+// surfaces whatever their box says, because CSS propagates their background
+// to the canvas.
+//
+// A translucent or image layer over the surface is not stepped over: what
+// shows there is a blend only pixels know, so the point is reported as
+// unresolvable and the parent reads pixels once, after the paint. That is the
+// only time pixels are read at all.
 //
 // The paint listener is armed, not permanent: from the document's creation
 // until shortly after load, and again for a couple of seconds whenever
 // something that could move the colour happens - a theme toggle flipping a
 // class on <html>, a late stylesheet, the page coming back from bfcache or
 // from the background, or the parent asking. Between those windows nothing
-// runs at all. A report is sent only when the answer changes.
+// runs at all. After the first paint, a paint whose rectangles do not touch the
+// sampled edge cannot have changed the surface and is not read; the rest are
+// coalesced to a few reads a second. A report is sent only when the answer
+// changes.
 //
 // Not every MozAfterPaint is a paint of the page. Gecko fires it for a tick
 // that had invalidations but sent no transaction, and - while painting is
 // still suppressed for a new document - for a transaction that draws nothing,
 // which leaves the <browser> element's own background on screen. Two tests
 // sort those out: the event's transactionId has to be past the one current
-// when the listener was armed (DOMFullscreenChild.sys.mjs:147-150), and the
-// event has to have painted rectangles of its own (event.clientRects, the same
-// discriminator AboutReaderChild.sys.mjs:210 uses). That second test fires on
-// the document's *first paint* - the frame its background reaches the screen -
-// which is the moment to match. First contentful paint was tried instead and
-// was wrong: on a heavy dark app it lands seconds late, long after the dark
-// background is already showing, so the gap held the old colour the whole load.
+// when the listener was armed, and the event has to have painted rectangles
+// of its own (event.clientRects, the same discriminator AboutReaderChild uses).
+// That second test fires on the document's *first paint* - the frame its
+// background reaches the screen - which is the moment to match.
 //
 // The initial document of every navigation is about:blank, and it fires load
 // and pageshow like any other document. It is skipped outright, or it would
@@ -56,11 +63,21 @@ const TRANSPARENT = "rgba(0, 0, 0, 0)";
 // the flood of per-paint lines is only wanted when chasing a timing bug.
 const DEBUG = false;
 
-// Fractions of the viewport height, one CSS pixel in from the left edge. The
-// top of a page is usually a header; the value that recurs down the edge is
-// the surface the panel would be floating on.
+// Which edge the sidebar is on. Zen's pref is mirrored into content processes
+// like any other, so the child can read it for itself.
+const RIGHT_SIDE_PREF = "zen.tabs.vertical.right-side";
+
+// Fractions of the viewport height, one CSS pixel in from the edge. The top of
+// a page is usually a header; the value that recurs down the edge is the
+// surface the panel would be floating on.
 const SAMPLES = [0.25, 0.55, 0.85];
-const SAMPLE_X = 1;
+
+// How much of the viewport height a box has to span to count as a surface.
+const SURFACE_MIN = 0.9;
+
+// A paint that touches none of this strip at the edge cannot have changed what
+// shows there.
+const EDGE_PX = 8;
 
 // How long paints keep being checked after load, for stylesheets and scripts
 // that finish colouring the page just after it.
@@ -69,6 +86,9 @@ const LOAD_TAIL_MS = 2000;
 // How long a nudge - a mutation, a visibility change, a parent request - keeps
 // the paint listener on.
 const NUDGE_MS = 2000;
+
+// After the first paint, reads are coalesced to one per this interval.
+const READ_GAP_MS = 40;
 
 export class SafariZenCanvasChild extends JSWindowActorChild {
   #active = false;
@@ -79,10 +99,12 @@ export class SafariZenCanvasChild extends JSWindowActorChild {
   #baseline = 0;
   #painted = false;
   #loaded = false;
-  // Paints are checked until this Cu.now() timestamp; Infinity until load.
+  // Paints are checked until this ChromeUtils.now() timestamp; Infinity until load.
   #until = 0;
   #observer = null;
   #lateObserved = false;
+  #readTimer = null;
+  #lastRead = 0;
 
   actorCreated() {
     const doc = this.document;
@@ -116,18 +138,19 @@ export class SafariZenCanvasChild extends JSWindowActorChild {
       this.#observeLate();
       this.#loaded = true;
       this.#painted = true;
-      this.#until = Cu.now() + LOAD_TAIL_MS;
+      this.#until = ChromeUtils.now() + LOAD_TAIL_MS;
     } else {
       if (doc.readyState === "interactive") this.#observeLate();
       this.#until = Infinity;
     }
     this.#arm(0);
-    this.#dbg("created", this.document.documentURI.slice(0, 60), "ready=" + doc.readyState);
+    this.#dbg("created", doc.documentURI.slice(0, 60), "ready=" + doc.readyState);
   }
 
   didDestroy() {
     this.#active = false;
     this.#disarm();
+    this.#cancelRead();
     try {
       this.#observer?.disconnect();
     } catch (e) {}
@@ -158,7 +181,7 @@ export class SafariZenCanvasChild extends JSWindowActorChild {
         if (event.target !== this.document) return;
         this.#observeLate();
         this.#loaded = true;
-        this.#until = Cu.now() + LOAD_TAIL_MS;
+        this.#until = ChromeUtils.now() + LOAD_TAIL_MS;
         // By load a visible page has painted; if no qualifying paint event was
         // ever seen, do not let that wedge reports off - trust load.
         this.#painted = true;
@@ -213,7 +236,7 @@ export class SafariZenCanvasChild extends JSWindowActorChild {
   // already on stays on.
   #arm(ms) {
     if (!this.#active) return;
-    if (this.#loaded) this.#until = Math.max(this.#until, Cu.now() + ms);
+    if (this.#loaded) this.#until = Math.max(this.#until, ChromeUtils.now() + ms);
     if (this.#paintTarget) return;
     const win = this.contentWindow;
     const target = win?.windowRoot;
@@ -242,72 +265,107 @@ export class SafariZenCanvasChild extends JSWindowActorChild {
     // Not composited since the listener went on: nothing new is on screen.
     const id = event.transactionId;
     if (typeof id === "number" && id <= this.#baseline) return;
-    // A composited transaction that drew nothing of this document - the empty
-    // frame Gecko sends while paint is still suppressed - has no painted rects.
-    // Skip it; the first one that does paint is the page's background arriving.
     const rects = event.clientRects;
-    if (rects && rects.length === 0 && !this.#painted) return;
-    this.#painted = true;
-    this.#report();
-    if (this.#loaded && Cu.now() > this.#until) this.#disarm();
+    if (!this.#painted) {
+      // A composited transaction that drew nothing of this document - the
+      // empty frame Gecko sends while paint is still suppressed - has no
+      // painted rects. Skip it; the first one that does paint is the page's
+      // background arriving, and that one is read at once.
+      if (rects && rects.length === 0) return;
+      this.#painted = true;
+      this.#cancelRead();
+      this.#report();
+    } else if (!rects || this.#touchesEdge(rects)) {
+      this.#scheduleRead();
+    }
+    if (this.#loaded && ChromeUtils.now() > this.#until) this.#disarm();
   }
 
-  // What shows at the left edge, resolved to one of two answers:
-  //   { colour: "rgb(...)" }  an opaque colour the parent can paint as is
+  #touchesEdge(rects) {
+    const win = this.contentWindow;
+    const right = rightSide();
+    const width = win?.innerWidth ?? 0;
+    for (const r of rects) {
+      if (right ? r.right > width - EDGE_PX : r.left < EDGE_PX) return true;
+    }
+    return false;
+  }
+
+  // One read per READ_GAP_MS at most, always with a trailing one so the last
+  // paint of a burst is what gets reported.
+  #scheduleRead() {
+    if (this.#readTimer) return;
+    const wait = Math.max(0, READ_GAP_MS - (ChromeUtils.now() - this.#lastRead));
+    this.#readTimer = this.contentWindow.setTimeout(() => {
+      this.#readTimer = null;
+      if (this.#active) this.#report();
+    }, wait);
+  }
+
+  #cancelRead() {
+    if (!this.#readTimer) return;
+    try {
+      this.contentWindow.clearTimeout(this.#readTimer);
+    } catch (e) {}
+    this.#readTimer = null;
+  }
+
+  // What shows at the edge, resolved to one of two answers:
+  //   { colour: "rgb(...)" }  an opaque surface the parent can paint as is
   //   { colour: null }        layout alone cannot name it - a gradient or an
-  //                           image, a translucent box, or nothing opaque at
+  //                           image, a translucent layer, or nothing opaque at
   //                           all (the page paints Zen's default) - and the
   //                           parent has to look at pixels instead
-  // `reason` is for the debug log only.
+  // `reason` is for the debug log; `ready` says whether this document has
+  // painted and is on screen, so a query cannot paint a placeholder.
   #read() {
+    this.#lastRead = ChromeUtils.now();
     const doc = this.document;
     const win = doc?.defaultView;
     if (!win || !doc.documentElement) return null;
     const height = win.innerHeight;
     if (!height) return null;
+    const x = rightSide() ? Math.max(0, win.innerWidth - 2) : 1;
 
-    const colours = [];
-    let reason = "transparent";
-    for (const fraction of SAMPLES) {
-      const at = this.#at(win, doc, SAMPLE_X, Math.round(height * fraction));
-      if (at.colour) {
-        colours.push(at.colour);
-      } else if (at.reason !== "transparent") {
-        reason = at.reason;
-      }
-    }
-
-    // Two of three agreeing is the answer. One lone colour beside two
-    // gradients is not: the gradient is the surface, and pixels know it.
-    const colour = mode(colours);
-    const agree = colours.filter(c => c === colour).length;
-    // A read from a document that has not painted, or is off screen, is not the
-    // page yet - the parent uses this to refuse painting a placeholder from a
-    // query. Paint pushes only fire past the gate, so they are ready already.
+    const points = SAMPLES.map(f => this.#at(win, doc, x, Math.round(height * f)));
+    const solid = points.filter(p => p.colour && !p.soft).map(p => p.colour);
+    const colour = mode(solid);
+    const agree = solid.filter(c => c === colour).length;
     const ready = this.#painted && !doc.hidden;
-    if (colour && (agree >= 2 || reason === "transparent")) {
-      return { colour, reason: "style", ready };
-    }
-    return { colour: null, reason, ready };
+
+    // Two of three agreeing is the answer. One lone surface beside two soft
+    // points is not: the soft thing is what shows, and pixels know it.
+    if (colour && agree >= 2) return { colour, reason: "style", ready };
+    const soft = points.find(p => p.soft)?.soft;
+    return { colour: null, reason: soft ?? "transparent", ready };
   }
 
-  // The first opaque background in the stack of boxes under a point, top
-  // down. A transparent box shows whatever is behind it, so it is skipped;
-  // <html> and <body> are in the stack too, which is how the CSS canvas is
-  // reached when nothing else paints there.
+  // The surface under a point: the topmost box in the stack that spans the
+  // viewport and paints an opaque background. `soft` names an image or
+  // translucent layer met on the way down - over the surface, or where no
+  // surface was found - which makes the point unresolvable from layout.
   #at(win, doc, x, y) {
     let stack;
     try {
       stack = doc.elementsFromPoint(x, y);
     } catch (e) {
-      return { colour: null, reason: "transparent" };
+      return { colour: null, soft: null };
     }
-    // Walk the stack top to bottom for the first fully opaque background. A
-    // translucent or image layer over it does not settle the colour - what
-    // shows is a blend of it and whatever is behind, which only pixels know -
-    // so note that and keep looking for something solid underneath.
+    const minHeight = win.innerHeight * SURFACE_MIN;
+    const html = doc.documentElement;
+    const body = doc.body;
     let soft = null;
     for (const el of stack) {
+      if (el !== html && el !== body) {
+        let rect;
+        try {
+          rect = el.getBoundingClientRect();
+        } catch (e) {
+          continue;
+        }
+        // Not a surface: content, a control, a highlight, a banner.
+        if (rect.height < minHeight) continue;
+      }
       const style = win.getComputedStyle(el);
       if (!style) continue;
       if (style.backgroundImage !== "none") {
@@ -320,9 +378,24 @@ export class SafariZenCanvasChild extends JSWindowActorChild {
         soft ??= "translucent";
         continue;
       }
-      return { colour: style.backgroundColor, reason: "style" };
+      return { colour: style.backgroundColor, soft };
     }
-    return { colour: null, reason: soft ?? "transparent" };
+    // Nothing opaque under the point. <body>'s background still propagates to
+    // the canvas when <html> declares none, even where <body>'s own box does
+    // not reach - a short page.
+    if (body && !stack.includes(body)) {
+      const style = win.getComputedStyle(body);
+      if (style?.backgroundImage !== "none") {
+        soft ??= "image";
+      } else {
+        const alpha = alphaOf(style.backgroundColor);
+        if (alpha === 1 && parseFloat(style.opacity) >= 1) {
+          return { colour: style.backgroundColor, soft };
+        }
+        if (alpha > 0) soft ??= "translucent";
+      }
+    }
+    return { colour: null, soft };
   }
 
   #report() {
@@ -343,6 +416,14 @@ export class SafariZenCanvasChild extends JSWindowActorChild {
     try {
       this.sendAsyncMessage("Canvas:Colour", data);
     } catch (e) {}
+  }
+}
+
+function rightSide() {
+  try {
+    return Services.prefs.getBoolPref(RIGHT_SIDE_PREF, false);
+  } catch (e) {
+    return false;
   }
 }
 

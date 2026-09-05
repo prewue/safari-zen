@@ -1,56 +1,43 @@
 // Page canvas colour for the pinned sidebar.
 //
-// Section 10 of chrome.css paints #navigator-toolbox with the colour of the
-// page canvas, so the gap around the floating panel reads as page rather than
-// as the workspace gradient - which is what compact has behind its panel, the
-// page card spanning the whole window underneath it.
-//
-// A fixed light/dark pair gets that wrong the moment a site brings its own
-// background: GitHub's dark #0d1117 against a hardcoded #202020 is plainly a
-// different colour. So the page is asked.
+// Section 10 of chrome.css paints three things with --safari-pin-canvas: the
+// gap around the floating panel, the content browser's own placeholder, and the
+// container behind it. Together they make the window one surface in the page's
+// colour - around the panel, and in the page area while a page is on its way -
+// which is what compact mode has behind its panel: the page itself.
 //
 // Two things have to be right, and neither can be known from this process:
 //
-//   what   The colour showing at the left edge. Resolved from layout in the
-//          content process (page-canvas-child.sys.mjs): the first opaque
-//          background under each of three points down the edge, which changes
-//          only when the page restyles itself. Pixels were tried first and
-//          change whenever the page's content does - an image loading, a video
-//          playing - which is what made the gap jump at random on a live page.
+//   what   The surface at the page's edge on the sidebar's side. Resolved from
+//          layout in the content process (page-canvas-child.sys.mjs), which
+//          changes only when the page restyles itself, not when its content
+//          scrolls or an image lands.
 //
-//   when   The frame the new document reaches the screen. drawSnapshot
-//          rasterises the document the moment it exists, about a second before
-//          the compositor shows it on a slow site, and every parent-side
-//          milestone is a network one. The content process knows: it reports
-//          from MozAfterPaint, after the paint has been composited, so the gap
-//          changes in the same frame as the page. (In-tree precedent:
-//          LoginManagerChild.sys.mjs:1707-1773, DOMFullscreenChild.sys.mjs:124-156.)
+//   when   The frame the new document reaches the screen. The content process
+//          reports from MozAfterPaint, after the paint has been composited, so
+//          the gap changes in the same frame as the page.
 //
-// This side only applies what it is told. It writes the variable when the
-// selected browser reports a change, and on a tab switch from a per-browser
-// cache, synchronously in the handler. It never clears the variable while
-// running: handing it back to the CSS fallback is itself a visible jump.
+// This side only applies what it is told: the selected browser's reports as
+// they come, and a per-browser cache on a tab switch, synchronously in the
+// handler. It never clears the variable while running - handing it back to
+// the CSS fallback is itself a visible jump - so between a navigation and the
+// new page's first paint the whole window simply keeps the previous colour.
 //
 // One more thing the content process cannot see: whether its frames are being
-// shown at all. Across a process switch - and on a switch to a tab that had
-// no layers - the compositor has nothing for the browser yet and the <browser>
-// paints its own placeholder, dark grey under a dark scheme, while the new
-// process is already painting into layers that are not on screen. The parent
-// does know: browser.hasLayers, and MozLayerTreeReady when it flips. A colour
-// for a browser without layers waits for that event (the async tab switcher's
-// own definition of "the tab is now visible", AsyncTabSwitcher.sys.mjs:783).
+// shown at all. Across a process switch - every cross-site navigation, with
+// Fission - the compositor has nothing for the browser yet and the <browser>
+// paints its own placeholder while the new process is already painting into
+// layers that are not on screen. The parent does know: browser.hasLayers, and
+// MozLayerTreeReady when it flips. A colour for a browser without layers waits
+// for that event. It is not applied on a short timeout: that is exactly the
+// case where the gap turns the new page's colour while the page area still
+// shows the placeholder, and the reason the wait is long and re-checks the
+// layers before giving up.
 //
-// Two reconciliations back the reports up, both after the fact and so unable
-// to lead the page: a tab switch asks the page again after applying the cache,
-// and the end of a top-level load asks once more. A report that was lost, or
-// deduplicated on the content side, is corrected there rather than on the
-// next visit to the tab.
-//
-// Pixels are still read in one case - a canvas that style alone cannot name:
-// transparent (the page paints Zen's default), translucent, a gradient or an
-// image. Then three 1x1 drawSnapshot pixels down the left edge decide, exactly
-// as before, but only once and only after the page has painted, when the
-// rasterisation and the screen agree.
+// Pixels are read in one case - a surface that style alone cannot name: a
+// gradient or an image, a translucent layer, or nothing opaque at all. Then
+// three 1x1 drawSnapshot pixels down the edge decide, once, after the page
+// has painted, when the rasterisation and the screen agree.
 
 const PREF = "mod.safari.pinned-panel";
 // Hidden. Logs every report and every write with a timestamp - to the console
@@ -58,16 +45,19 @@ const PREF = "mod.safari.pinned-panel";
 // it change during that load" is a number rather than an impression.
 const DEBUG_PREF = "mod.safari.pinned-panel.debug";
 const LOG_FILE = "safari-canvas.log";
-// How long a colour waits for MozLayerTreeReady before going on regardless.
-// The tab switcher itself stops waiting for layers after 400ms and shows what
-// it has; past that the browser is on screen whatever hasLayers says.
-const LAYERS_WAIT_MS = 600;
 const VAR = "--safari-pin-canvas";
 const ACTOR = "SafariZenCanvas";
 
+// A colour for a browser whose layers are not on screen waits for
+// MozLayerTreeReady. After LAYERS_RECHECK_MS the layers are looked at again in
+// case the event was missed; after LAYERS_FORCE_MS the colour goes on
+// regardless, so a browser that never reports layers cannot wedge the gap.
+const LAYERS_RECHECK_MS = 2500;
+const LAYERS_FORCE_MS = 6000;
+
 // Fractions of the viewport height for the pixel fallback, one pixel in from
-// the left edge. Three rather than one because the top-left pixel of a page is
-// usually a header; the value that recurs down the edge is the canvas.
+// the edge. Three rather than one because the top of a page is usually a
+// header; the value that recurs down the edge is the surface.
 const SAMPLES = [0.25, 0.55, 0.85];
 const MIN_ALPHA = 250;
 const SAMPLE_RETRY_MS = 120;
@@ -93,10 +83,9 @@ let cache = new WeakMap();
 // The most recent report per browser, so a slower pixel read cannot land over
 // a newer answer.
 let pending = new WeakMap();
-// Colours for browsers whose layers are not on screen yet, applied on
-// MozLayerTreeReady - or after LAYERS_WAIT_MS, whichever comes first.
+// Colours for browsers whose layers are not on screen yet: { colour, why,
+// since, timer }, applied on MozLayerTreeReady or by the timers above.
 let waiting = new WeakMap();
-let waitTimer = null;
 
 let last = "";
 let listening = false;
@@ -147,6 +136,10 @@ function contentIsDark() {
   }
 }
 
+function rightSide() {
+  return root.getAttribute("zen-right-side") === "true";
+}
+
 // Whether the compositor is showing this browser's content. A browser in the
 // parent process has no layer tree of its own to wait for.
 function showing(browser) {
@@ -157,36 +150,70 @@ function showing(browser) {
   }
 }
 
+function selectedBrowser() {
+  return window.gBrowser?.selectedBrowser;
+}
+
+// ---- layers ---------------------------------------------------------------
+
 // Apply now if the browser is on screen, otherwise when it gets there.
 function present(browser, colour, why) {
   if (showing(browser)) {
-    waiting.delete(browser);
+    forget(browser);
     apply(colour, why);
     return;
   }
-  waiting.set(browser, colour);
+  const entry = waiting.get(browser);
+  if (entry) {
+    // A newer colour for the same wait: keep the clock, replace the answer.
+    entry.colour = colour;
+    entry.why = why;
+    debug("deferred until layers (updated)", colour, why);
+    return;
+  }
+  const since = window.performance.now();
+  waiting.set(browser, { colour, why, since, timer: null });
   debug("deferred until layers", colour, why);
-  window.clearTimeout(waitTimer);
-  waitTimer = window.setTimeout(() => release(browser, "layers-timeout"), LAYERS_WAIT_MS);
+  schedule(browser, LAYERS_RECHECK_MS);
+}
+
+function schedule(browser, ms) {
+  const entry = waiting.get(browser);
+  if (!entry) return;
+  window.clearTimeout(entry.timer);
+  entry.timer = window.setTimeout(() => recheck(browser), ms);
+}
+
+function recheck(browser) {
+  const entry = waiting.get(browser);
+  if (!entry) return;
+  entry.timer = null;
+  const waited = window.performance.now() - entry.since;
+  if (showing(browser)) {
+    release(browser, "layers-recheck");
+  } else if (waited >= LAYERS_FORCE_MS) {
+    release(browser, "layers-forced");
+  } else {
+    schedule(browser, Math.max(100, LAYERS_FORCE_MS - waited));
+  }
+}
+
+function forget(browser) {
+  const entry = waiting.get(browser);
+  if (!entry) return;
+  window.clearTimeout(entry.timer);
+  waiting.delete(browser);
 }
 
 function release(browser, why) {
-  const colour = waiting.get(browser);
-  if (!colour) return;
-  waiting.delete(browser);
-  if (browser === window.gBrowser.selectedBrowser) apply(colour, why);
+  const entry = waiting.get(browser);
+  if (!entry) return;
+  forget(browser);
+  if (browser === selectedBrowser()) apply(entry.colour, `${entry.why}/${why}`);
 }
 
 function onLayersReady(event) {
   release(event.originalTarget, "layers-ready");
-}
-
-function actorFor(browser) {
-  try {
-    return browser?.browsingContext?.currentWindowGlobal?.getActor(ACTOR) ?? null;
-  } catch (e) {
-    return null;
-  }
 }
 
 // ---- pixel fallback -------------------------------------------------------
@@ -228,20 +255,23 @@ function mode(values) {
 }
 
 async function sample(browser) {
+  let width = 0;
   let height = 0;
   try {
     // The bounds are chrome pixels; drawSnapshot's rect is content CSS pixels,
     // which differ by the page zoom. Without the division the lowest sample
     // falls off the viewport on a zoomed page and reads as unpainted.
-    height =
-      window.windowUtils.getBoundsWithoutFlushing(browser).height /
-      (browser.fullZoom || 1);
+    const bounds = window.windowUtils.getBoundsWithoutFlushing(browser);
+    const zoom = browser.fullZoom || 1;
+    width = bounds.width / zoom;
+    height = bounds.height / zoom;
   } catch (e) {}
   if (!height) return null;
 
+  const x = rightSide() ? Math.max(0, Math.floor(width) - 2) : 1;
   const results = await Promise.all(
     SAMPLES.map(fraction =>
-      samplePixel(browser, 1, Math.round(height * fraction)).catch(() => null)
+      samplePixel(browser, x, Math.round(height * fraction)).catch(() => null)
     )
   );
   return mode(results.filter(Boolean));
@@ -254,15 +284,15 @@ async function resolve(browser, colour) {
   if (colour) return colour;
   // Only a genuinely empty tab gets the wash. The <browser> `transparent`
   // attribute is no good for this: Zen sets it when a tab is created empty and
-  // never clears it on navigation (ZenSpaceManager / tabbrowser.js:2960), so a
-  // page opened from a new tab still carries it and would be washed grey. The
-  // tab's own `zen-empty-tab` is kept current by #changeToEmptyTab, and is the
-  // same state the CSS fallback keys off.
+  // never clears it on navigation (tabbrowser.js:2960), so a page opened from
+  // a new tab still carries it and would be washed grey. The tab's own
+  // `zen-empty-tab` is kept current by #changeToEmptyTab, and is the same
+  // state the CSS fallback keys off.
   const tab = window.gBrowser.getTabForBrowser?.(browser);
   if (tab?.hasAttribute("zen-empty-tab")) {
     return contentIsDark() ? WASH_DARK : WASH_LIGHT;
   }
-  // The canvas is a gradient, an image, or translucent - style could not name
+  // The surface is a gradient, an image, or translucent - style could not name
   // it. Read what is actually on screen. drawSnapshot answers false
   // mid-process-switch, so one more look a moment later is cheap.
   return (
@@ -275,10 +305,10 @@ async function resolve(browser, colour) {
 
 async function settle(browser, data, why) {
   if (!browser || !data) return;
-  // A read from a document that has not had its first contentful paint, or is
-  // not on screen, is not the page yet. The paint push will bring the real one
-  // once it is; do not paint a placeholder in the meantime. (Paint pushes omit
-  // the flag and so are always taken.)
+  // A read from a document that has not had its first paint, or is not on
+  // screen, is not the page yet. The paint push will bring the real one once
+  // it is; do not paint a placeholder in the meantime. (Paint pushes are past
+  // the gate by construction.)
   if (data.ready === false) {
     debug("skip not-ready", why, data.reason);
     return;
@@ -298,7 +328,7 @@ async function settle(browser, data, why) {
   if (!colour) return;
 
   cache.set(browser, colour);
-  const selected = browser === window.gBrowser.selectedBrowser;
+  const selected = browser === selectedBrowser();
   debug(
     "report",
     why,
@@ -317,8 +347,16 @@ function onColour(event) {
 
 function onChildDebug(event) {
   const { browser, args } = event.detail ?? {};
-  const sel = browser === window.gBrowser?.selectedBrowser ? "*" : " ";
+  const sel = browser === selectedBrowser() ? "*" : " ";
   debug("child" + sel, ...(args ?? []));
+}
+
+function actorFor(browser) {
+  try {
+    return browser?.browsingContext?.currentWindowGlobal?.getActor(ACTOR) ?? null;
+  } catch (e) {
+    return null;
+  }
 }
 
 // Ask the page what it shows right now. Applied only if the browser is still
@@ -329,21 +367,10 @@ function query(browser, why) {
   actor
     .sendQuery("Canvas:Get")
     .then(data => {
-      if (browser !== window.gBrowser.selectedBrowser) return;
+      if (browser !== selectedBrowser()) return;
       return settle(browser, data, why);
     })
     .catch(e => debug("query failed", why, e?.message ?? e));
-}
-
-// The only synchronous path there is: the tab is already painted and, if it
-// has reported before, its colour is already known. Paint it in the same tick
-// as the switch, then ask the page to confirm - the page is on screen, so a
-// different answer now is a correction, not a lead.
-function onTabSelect() {
-  const browser = window.gBrowser.selectedBrowser;
-  const cached = cache.get(browser);
-  if (cached) present(browser, cached, "tab-select");
-  query(browser, cached ? "tab-select/confirm" : "tab-select/query");
 }
 
 function nudge(browser, force = false) {
@@ -352,25 +379,43 @@ function nudge(browser, force = false) {
   } catch (e) {}
 }
 
+// The only synchronous path there is: the tab is already painted and, if it
+// has reported before, its colour is already known. Paint it in the same tick
+// as the switch, then ask the page to confirm - the page is on screen, so a
+// different answer now is a correction, not a lead.
+function onTabSelect() {
+  const browser = selectedBrowser();
+  if (!browser) return;
+  // The empty tab has no document to ask - the actor never activates on an
+  // initial about:blank - and its answer is known anyway: the wash. Written
+  // into the variable rather than left to the CSS branch, so that the moment
+  // this tab starts navigating and the empty-tab branch drops away, the gap
+  // and the placeholder are still the wash, and the next change is the new
+  // page's own first paint.
+  const tab = window.gBrowser.selectedTab;
+  if (tab?.hasAttribute("zen-empty-tab")) {
+    apply(contentIsDark() ? WASH_DARK : WASH_LIGHT, "tab-select/empty");
+    return;
+  }
+  const cached = cache.get(browser);
+  if (cached) present(browser, cached, "tab-select");
+  query(browser, cached ? "tab-select/confirm" : "tab-select/query");
+}
+
 const progressListener = {
   QueryInterface: ChromeUtils.generateQI([
     "nsIWebProgressListener",
     "nsISupportsWeakReference",
   ]),
   // A new document reports itself when it paints; nothing is done here for
-  // that. A same-document change - an SPA route - creates no document and so
-  // no first paint, but may well restyle, so the page is asked to watch its
+  // that - acting on it would be acting on a network milestone, which leads
+  // the page. A same-document change - an SPA route - creates no document and
+  // so no first paint, but may well restyle, so the page is asked to watch its
   // next few paints.
   onLocationChange(browser, webProgress, request, location, flags) {
     if (!webProgress?.isTopLevel) return;
-    if (!(flags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT)) {
-      // A document swap paints itself and pushes; nothing to do here. Acting on
-      // it would be acting on a network milestone, which is what led the page.
-      return;
-    }
-    // A same-document route change creates no document and so no first paint,
-    // but may restyle; ask the page to watch its next few paints.
-    if (browser !== window.gBrowser.selectedBrowser) return;
+    if (!(flags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT)) return;
+    if (browser !== selectedBrowser()) return;
     nudge(browser);
   },
 };
@@ -380,7 +425,15 @@ const onSchemeChange = () => {
   // Every cached colour was read under the old scheme. The page restyles and
   // repaints on its own; it only has to be told to look again.
   cache = new WeakMap();
-  nudge(window.gBrowser.selectedBrowser, true);
+  nudge(selectedBrowser(), true);
+};
+
+// The sampled edge follows the sidebar. Zen flips the attribute when the pref
+// changes; the child reads the pref itself, and only has to be asked again.
+let sideObserver = null;
+const onSideChange = () => {
+  cache = new WeakMap();
+  nudge(selectedBrowser(), true);
 };
 
 // ---- lifecycle ------------------------------------------------------------
@@ -429,6 +482,11 @@ function start() {
   window.gBrowser.tabContainer.addEventListener("TabSelect", onTabSelect);
   window.gBrowser.addTabsProgressListener(progressListener);
   scheme.addEventListener("change", onSchemeChange);
+  sideObserver = new window.MutationObserver(onSideChange);
+  sideObserver.observe(root, {
+    attributes: true,
+    attributeFilter: ["zen-right-side"],
+  });
   onTabSelect();
 }
 
@@ -443,10 +501,12 @@ function stop() {
     window.gBrowser.tabContainer.removeEventListener("TabSelect", onTabSelect);
     window.gBrowser.removeTabsProgressListener(progressListener);
     scheme.removeEventListener("change", onSchemeChange);
+    sideObserver?.disconnect();
   } catch (e) {}
+  sideObserver = null;
+  for (const browser of window.gBrowser.browsers) forget(browser);
   // Hand the gap back to the static light/dark pair in chrome.css.
   root.style.removeProperty(VAR);
-  window.clearTimeout(waitTimer);
   cache = new WeakMap();
   pending = new WeakMap();
   waiting = new WeakMap();

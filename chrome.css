@@ -535,21 +535,27 @@
        beside Zen's grey placeholder — the artefact where the gap took the new
        colour a beat before the page arrived.
 
-       Zen paints an opaque placeholder on the content browser before the page
-       does (browser[type="content"]:not([transparent="true"]),
-       zen-browser-container.css:16-18, light-dark(#fff, #202020)). That is the
-       grey the page area showed. Overriding it to --safari-pin-canvas makes the
-       placeholder the page's own colour: the browser stays opaque, so no window
-       gradient bleeds through and video, PDF and image documents are untouched —
-       only the flat colour shown before and behind the page changes. The page's
-       own paint then covers it exactly, since that canvas is what the variable
-       was sampled from, so gap and page move as one.
+       Zen paints a placeholder on the content browser before the page does
+       (zen-browser-container.css:16-22): an opaque light-dark(#fff, #202020) on
+       an ordinary browser, and on a [transparent="true"] one a white wash that
+       lets the workspace gradient through. Overriding both to
+       --safari-pin-canvas makes the placeholder the page's own colour, so
+       whatever shows before the page arrives — across a process switch, which
+       every cross-site navigation is — matches the gap beside it. Video, PDF
+       and image documents are untouched: only the flat colour shown before and
+       behind the page changes, and the page's own paint then covers it exactly,
+       since that surface is what the variable was sampled from.
 
-       [transparent="true"] browsers — the empty tab — are left to Zen's wash,
-       matching the gap's own empty-tab branch above. Same fallback pair and the
-       same content-scheme media query as the toolbox, so with the script off the
-       placeholder is byte-for-byte Zen's own. */
-    & browser[type="content"]:not([transparent="true"]) {
+       The empty tab is left to Zen's wash, matching the gap's own empty-tab
+       branch above. That is keyed off :root's zen-has-empty-tab, not the
+       browser's [transparent="true"]: Zen sets `transparent` when a tab is
+       created empty and never clears it on navigation (tabbrowser.js:2960), so
+       a page opened from a new tab keeps it for life — and keying the
+       placeholder off it left exactly those tabs showing the gradient wash
+       beside a page-coloured gap while a site loaded. Same fallback pair and
+       the same content-scheme media query as the toolbox, so with the script
+       off the placeholder is byte-for-byte Zen's own. */
+    &:not([zen-has-empty-tab="true"]) browser[type="content"] {
       background-color: var(--safari-pin-canvas, rgb(255, 255, 255)) !important;
 
       @media (-moz-content-prefers-color-scheme: dark) {
