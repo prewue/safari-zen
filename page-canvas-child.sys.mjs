@@ -131,19 +131,29 @@ export class SafariZenCanvasChild extends JSWindowActorChild {
     // Until load, every paint is looked at. The first one is the frame in
     // which this document replaced the previous one on screen.
     //
-    // The actor can also be created late - the parent asking about a page
-    // that was open before the mod started - and then load has already
-    // happened and will not come again; the tail starts now.
-    if (doc.readyState === "complete") {
+    // The actor can also be created late: by the parent asking, or by
+    // DOMContentLoaded or load on a document that was already here before
+    // this window started listening - every tab a session restores. Then the
+    // first paint is behind it, and nothing may ever trigger a read: a page
+    // that has finished drawing paints no more. So what is on screen now is
+    // reported at once. Past "loading" the document has painted - paint
+    // suppression ends with the first stylesheet or a few ms in - unless it is
+    // hidden, and a hidden one reports at load, below.
+    if (doc.readyState !== "loading") {
       this.#observeLate();
-      this.#loaded = true;
       this.#painted = true;
-      this.#until = ChromeUtils.now() + LOAD_TAIL_MS;
+      if (doc.readyState === "complete") {
+        this.#loaded = true;
+        this.#until = ChromeUtils.now() + LOAD_TAIL_MS;
+      } else {
+        this.#until = Infinity;
+      }
+      this.#arm(0);
+      if (!doc.hidden) this.#report();
     } else {
-      if (doc.readyState === "interactive") this.#observeLate();
       this.#until = Infinity;
+      this.#arm(0);
     }
-    this.#arm(0);
     this.#dbg("created", doc.documentURI.slice(0, 60), "ready=" + doc.readyState);
   }
 
@@ -177,21 +187,24 @@ export class SafariZenCanvasChild extends JSWindowActorChild {
         if (event.target !== this.document) return;
         this.#observeLate();
         break;
-      case "load":
+      case "load": {
         if (event.target !== this.document) return;
         this.#observeLate();
         this.#loaded = true;
         this.#until = ChromeUtils.now() + LOAD_TAIL_MS;
-        // By load a visible page has painted; if no qualifying paint event was
-        // ever seen, do not let that wedge reports off - trust load.
+        // By load a visible page has painted. If no qualifying paint was seen
+        // since the listener went on, the first paint was before it - the
+        // listener came late - and nothing else will come to read the page:
+        // report now rather than wait for a paint that a finished page never
+        // makes. A document loading in the background never paints at all;
+        // its colour is not on screen either, so sending it costs nothing
+        // visible and lets the parent cache it for the switch.
+        const unseen = !this.#painted;
         this.#painted = true;
-        // A document loading in the background never paints, so nothing
-        // above would ever report it. Its colour is not on screen either, so
-        // sending it now costs nothing visible and lets the parent cache it
-        // for the switch.
-        if (this.document.hidden) this.#report();
+        if (unseen || this.document.hidden) this.#report();
         this.#arm(0);
         break;
+      }
       case "pageshow":
         // bfcache restores do not create a new document, so no first paint
         // is pending; the next paint is the one that shows it.

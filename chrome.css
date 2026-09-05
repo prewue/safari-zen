@@ -2,17 +2,23 @@
    Pairs with window-radius.uc.mjs, which sets the native macOS window
    corner radius to 26 (the Tahoe system default). */
 
-/* 1. Outer padding of the sidebar from the window edge. */
+/* 1. Outer padding of the sidebar from the window edge.
+   Zen insets the panel by half of this on every outer side (see section 10 and
+   zen-compact-mode.css:137-141), so 14px is a 7px gap between the window edge
+   and the panel. The selector carries :root on purpose: a userChrome.css that
+   sets the same variable on #navigator-toolbox is a user sheet too, and with
+   both !important only specificity decides. */
 @media -moz-pref("mod.safari.sidebar-float") {
-  #navigator-toolbox {
-    --zen-compact-float: 22px !important;
+  :root #navigator-toolbox {
+    --zen-compact-float: 14px !important;
   }
 }
 
-/* 2. Sidebar corner radius. */
+/* 2. Sidebar corner radius. Zen's panel radius is this minus half the content
+   separation (zen-theme.css:269-276), which with flush content is this. */
 @media -moz-pref("mod.safari.sidebar-radius") {
   :root {
-    --zen-border-radius: 20px !important;
+    --zen-border-radius: 24px !important;
   }
 }
 

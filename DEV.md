@@ -495,6 +495,14 @@ The gap is dropped on the page-facing side — the panel runs straight up to the
 there, with only its inner spacing left — so `inset-inline-end` goes to 0 and the
 padding on that side carries the inner value alone. Both flip for a right-hand sidebar.
 
+The numbers: section 1 sets `--zen-compact-float` to 14px, so the gap on the outer sides
+is 7px in both modes, and section 2 sets `--zen-border-radius` to 24px, which with flush
+content is the panel radius (`zen-theme.css:269-276` subtracts half the separation, 0.1px
+here; the Tahoe/no-padding radius fix then takes 2px off the panel itself). Both were
+22px / 20px until the second round asked for 4px more gap and 4px more radius. Section 1's selector carries `:root` because a `userChrome.css` in the profile
+sets the same variable on `#navigator-toolbox` with `!important`, is a user sheet just
+like Sine's, and with equal origin and importance only specificity decides.
+
 Otherwise the gap is padding, the toolbox paints it, and the panel is inset back out
 of it:
 
@@ -631,6 +639,12 @@ of every page was read for the life of the document, and `actorCreated` failed o
 for a document that was already complete. That, with the edge-pixel reading above, is
 most of what the "jumpy gap" was. `ChromeUtils.now()` is the replacement everywhere.
 
+**A pixel re-read is compared with tolerance.** Two `drawSnapshot` reads of the same
+gradient a moment apart differ by a few units — `rgb(10, 12, 62)` on a switch to GitHub's
+home, `rgb(7, 9, 63)` from the confirm query 20 ms later — and applying the second is a
+visible flick for no information. A pixel answer within 12 units per channel of the
+colour already cached for the browser keeps the cached one.
+
 **The parent applies, it does not decide.** `page-canvas.uc.mjs` writes the variable
 when the *selected* browser reports, and on `TabSelect` from a per-browser `WeakMap`,
 synchronously in the handler. A same-document location change — an SPA route — creates
@@ -696,9 +710,16 @@ itself a visible jump — to grey, under a dark content scheme.
   is warmed and *does* paint in the background. Reports from it land in the cache and
   are applied only if the browser is the selected one.
 - The actor can be created late — the parent asking about a page that was open before
-  the mod started. `load` has already happened and will not come again, so the child
-  checks `readyState` and starts the post-load tail immediately rather than listening
-  forever.
+  the mod started, or `DOMContentLoaded` / `load` arriving on a document that was
+  already here when the actor was registered, which is every tab a session restores
+  (the mod starts 800 ms after the window's `load`, and restored tabs are well under way
+  by then). Such a document's first paint is behind it, and a page that has finished
+  drawing paints no more, so nothing would ever trigger a read: the child reports at
+  once when created on a document past `loading`, and again at `load` if no paint was
+  seen since it armed. Before this, a restored tab whose page was painted and idle by
+  the time the parent asked answered `ready: false` and then waited for a paint that
+  never came — the gap stayed on the fallback until a reload, and the user's own log
+  shows `skip not-ready` at 1.1 s followed by the first `apply` at 5.9 s or never.
 - `drawSnapshot`'s rect is in content CSS pixels; `getBoundsWithoutFlushing` is chrome
   pixels. Divide by `browser.fullZoom` or the lowest sample falls off a zoomed page's
   viewport and reads as unpainted.
@@ -1025,6 +1046,28 @@ The child actor stamps every report with its phase — `meta`, `dcl`, `load` —
 the `load` one even when the colours repeat, since the parent is waiting for that word
 before it trusts the canvas. It also answers `Accent:Get`, for a tab that was open
 before the listener attached.
+
+Two more things the trace turned up, both on GitHub:
+
+- **A site can set its icon twice.** GitHub ships a light and a dark `<link rel="icon">`
+  and `onLinkIconAvailable` fires for each, ~30 ms apart. The first decoded as
+  "chromatic" with a winning bucket at saturation 0.16 — a handful of anti-aliased
+  pixels on the edge of a monochrome mark — and the second as neutral, so the final
+  answer moved from the icon to the theme-color a frame later. The scorer now also
+  requires the winning bucket's *mean* saturation to clear 0.22, which makes both of
+  GitHub's icons neutral, and a final answer taken from a chromatic icon is never
+  demoted by a later non-icon decision, so a genuine light/dark pair cannot flip the
+  sidebar either.
+- **A new tab is at `about:blank` before its page commits**, and `seed()` used to read
+  it as a loaded page with no icon: 420 ms later, if the page had still not committed
+  (a slow site), "no accent" was final and the sidebar faded to the theme, then to the
+  site. A tab at `about:blank` that is not the empty tab is now held with no state at
+  all; `begin()` takes over when the document arrives.
+
+`mod.safari.site-accent.debug` (hidden, boolean) logs every signal — navigate, icon,
+page report, load stop — every decision with its tier and the state it was made from,
+and every `show()` with its caller, to the console and to `safari-accent.log` in the
+profile. One navigation should be one `decide` line and one `show`.
 
 ### The compositing knob
 

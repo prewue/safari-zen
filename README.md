@@ -32,8 +32,8 @@ own approximation. macOS only.
 sits behind the sidebar. Your workspace theme is kept — a gradient stays a
 gradient, just softer — and switching workspaces still cross-fades normally.
 
-**Safari-like sidebar shape.** The sidebar floats 22px from the window edge with
-a 20px corner radius and tighter internal padding, so it reads as a panel rather
+**Safari-like sidebar shape.** The sidebar floats 7px from the window edge with
+a 24px corner radius and tighter internal padding, so it reads as a panel rather
 than a docked strip. The page itself sits flush against the window, with no gap
 around it.
 

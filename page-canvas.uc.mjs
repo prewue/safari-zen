@@ -68,6 +68,11 @@ const SAMPLE_RETRY_MS = 120;
 const WASH_LIGHT = "rgba(255, 255, 255, 0.6)";
 const WASH_DARK = "rgba(255, 255, 255, 0.1)";
 
+// Two pixel reads of the same gradient a moment apart differ by a few units -
+// antialiasing, a scroll, a hover. Within this much of what is already
+// showing, the read is the same answer, not a correction.
+const PIXEL_TOLERANCE = 12;
+
 const TAG = "[Safari-like Zen / canvas]";
 
 // Sibling modules, resolved off this file's own URL: the mod folder is whatever
@@ -239,6 +244,18 @@ async function samplePixel(browser, x, y) {
   }
 }
 
+function channels(colour) {
+  const m = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(colour);
+  return m ? [+m[1], +m[2], +m[3]] : null;
+}
+
+function near(a, b) {
+  const x = channels(a);
+  const y = channels(b);
+  if (!x || !y) return a === b;
+  return x.every((v, i) => Math.abs(v - y[i]) <= PIXEL_TOLERANCE);
+}
+
 // Most frequent value, first one wins a tie. With three samples this is "two
 // agree" in practice, and falls back to the topmost sample when all differ.
 function mode(values) {
@@ -326,6 +343,13 @@ async function settle(browser, data, why) {
   // Superseded by a newer report, or by stop().
   if (mine !== run || pending.get(browser) !== token) return;
   if (!colour) return;
+
+  // A pixel read that lands within a whisker of the colour already known for
+  // this browser is noise, not news; keep what is on screen.
+  if (!data.colour) {
+    const known = cache.get(browser);
+    if (known && near(known, colour)) colour = known;
+  }
 
   cache.set(browser, colour);
   const selected = browser === selectedBrowser();
