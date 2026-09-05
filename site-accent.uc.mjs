@@ -131,7 +131,12 @@ const RETRY_MS = 900;
 // Favicon scoring.
 const ICON_SIZE = 32;
 const MIN_ALPHA = 128;
-const ICON_MIN_SATURATION = 0.15; // below this the icon is monochrome - GitHub
+const ICON_MIN_SATURATION = 0.15; // a pixel below this is ink or paper, not colour
+// The winning bucket's mean saturation has to clear this, or the "colour" is a
+// handful of anti-aliased pixels at the edge of a monochrome mark - GitHub's
+// dark icon scores 0.16 and came out as a blue-grey accent that then lost to
+// the site's theme-color a frame later.
+const ICON_MIN_MEAN_SATURATION = 0.22;
 const MAX_LIGHTNESS = 0.93; // icon paper
 const MIN_LIGHTNESS = 0.07; // icon ink
 const HUE_BINS = 24;
@@ -175,6 +180,30 @@ let last = "";
 let listening = false;
 let fadeTimer = null;
 let darkObserver = null;
+
+// Hidden. Logs every signal and every decision with a timestamp - to the
+// console and, appended, to safari-accent.log in the profile - so "why did it
+// change twice" is a trace rather than a guess.
+const DEBUG_PREF = "mod.safari.site-accent.debug";
+const LOG_FILE = "safari-accent.log";
+let logPath = null;
+
+function debug(...args) {
+  try {
+    if (!Services.prefs.getBoolPref(DEBUG_PREF, false)) return;
+  } catch (e) {
+    return;
+  }
+  const stamp = `${Math.round(window.performance.now())}ms`;
+  console.log(TAG, stamp, ...args);
+  try {
+    logPath ??= PathUtils.join(PathUtils.profileDir, LOG_FILE);
+    const line = `${new Date().toISOString()} ${stamp} ${args
+      .map(a => (typeof a === "string" ? a : JSON.stringify(a)))
+      .join(" ")}\n`;
+    IOUtils.writeUTF8(logPath, line, { mode: "appendOrCreate" }).catch(() => {});
+  } catch (e) {}
+}
 
 function enabled() {
   try {
@@ -474,6 +503,7 @@ function dominantColour(data) {
       best = bucket;
     }
   }
+  if (best && best.s / best.n < ICON_MIN_MEAN_SATURATION) best = null;
 
   return {
     // The bucket's mean, not its centre: the centre is a quantisation artefact.
@@ -571,7 +601,8 @@ function apply(accent) {
 }
 
 // A source colour, or null for "no accent", to the sidebar.
-function show(source) {
+function show(source, why) {
+  debug("show", why, source, "selected=" + (window.gBrowser?.selectedBrowser?.currentURI?.spec || "").slice(0, 50));
   apply(source ? normalise(source) : null);
 }
 
@@ -612,9 +643,10 @@ function stateOf(tab) {
       loadedAt: 0,
       // The decision: the rgb the accent derives from, null for "no accent",
       // undefined while there is none yet. `final` says whether a later signal
-      // may still improve it.
+      // may still improve it, `tier` which tier gave it.
       source: undefined,
       final: false,
+      tier: null,
       started: 0,
       timer: null,
     };
@@ -668,26 +700,26 @@ function decide(tab, s) {
 
   // Tier 1, the favicon. A chromatic one is the answer the moment it decodes;
   // everything below waits until the icon question is settled.
-  if (s.icon?.chromatic) return { source: s.icon.chromatic, final: true };
+  if (s.icon?.chromatic) return { source: s.icon.chromatic, final: true, tier: "icon" };
   if (!overdue && !iconSettled(tab, s, now)) return null;
 
   // Tier 2, the site's own declaration.
   const meta = usable(parseColour(s.page?.themeColour));
-  if (meta) return { source: meta, final: true };
+  if (meta) return { source: meta, final: true, tier: "theme-color" };
 
   // Tier 3, the canvas. Trustworthy once the page has loaded and its
   // stylesheets are in; before that it is a guess for the deadline only.
   const settled = s.loaded || s.page?.phase === "load" || overdue;
   const canvas = usable(parseColour(s.page?.canvasColour));
-  if (canvas) return { source: canvas, final: settled };
+  if (canvas) return { source: canvas, final: settled, tier: "canvas" };
 
   // Tier 4, the monochrome reading of the icon.
-  if (s.icon?.neutral) return { source: s.icon.neutral, final: true };
+  if (s.icon?.neutral) return { source: s.icon.neutral, final: true, tier: "icon-neutral" };
 
   // Every tier declined. Final once the page has said its last word, so the
   // theme comes back only for a page that really has no colour of its own.
   if (settled && (s.page || s.loaded || overdue)) {
-    return { source: null, final: true };
+    return { source: null, final: true, tier: "none" };
   }
   return null;
 }
@@ -699,17 +731,33 @@ function evaluate(tab) {
   const r = decide(tab, s);
   if (!r) return;
   // A provisional answer never replaces a final one, and a final one that is
-  // the same answer again is a no-op.
+  // the same answer again is a no-op. A brand colour taken from the favicon
+  // is not given up either: a site that sets a second icon - a light and a
+  // dark variant - would otherwise flip to its theme-color a frame later.
   if (!r.final && s.final) return;
   if (s.final && sameSource(r.source, s.source)) return;
+  if (s.final && s.tier === "icon" && r.tier !== "icon") return;
+  debug(
+    "decide",
+    s.origin,
+    r.tier,
+    r.final ? "final" : "provisional",
+    r.source,
+    "| icon=" + (s.iconURL ? (s.icon === undefined ? "decoding" : s.icon.chromatic ? "chromatic" : s.icon.neutral ? "neutral" : "none") : "unset"),
+    "page=" + (s.page ? s.page.phase + ":" + s.page.themeColour + "/" + s.page.canvasColour : "none"),
+    "loaded=" + s.loaded,
+    "pending=" + tab.hasAttribute("pendingicon"),
+    "+" + Math.round(window.performance.now() - s.started) + "ms"
+  );
   s.source = r.source;
   s.final = r.final;
+  s.tier = r.tier;
   if (r.final) {
     remember(s.origin, r.source);
     window.clearTimeout(s.timer);
     s.timer = null;
   }
-  if (selected(tab)) show(r.source);
+  if (selected(tab)) show(r.source, "decide/" + r.tier);
 }
 
 // A new document has committed in this tab. Everything known is about the old
@@ -727,6 +775,7 @@ function begin(tab, browser) {
   s.loadedAt = 0;
   s.source = undefined;
   s.final = false;
+  s.tier = null;
   s.started = window.performance.now();
   window.clearTimeout(s.timer);
   s.timer = null;
@@ -734,11 +783,11 @@ function begin(tab, browser) {
   if (blank(tab)) {
     s.source = null;
     s.final = true;
-    if (selected(tab)) show(null);
+    if (selected(tab)) show(null, "begin/empty");
     return;
   }
 
-  if (selected(tab) && byOrigin.has(s.origin)) show(byOrigin.get(s.origin));
+  if (selected(tab) && byOrigin.has(s.origin)) show(byOrigin.get(s.origin), "begin/origin");
 
   const epoch = s.epoch;
   s.timer = window.setTimeout(() => {
@@ -760,9 +809,21 @@ function seed(tab, browser) {
     s.final = true;
     return s;
   }
+  // A tab sitting at about:blank is on its way somewhere - a new tab opened on
+  // a link has not committed its document yet. There is nothing to read and
+  // nothing to decide; begin() takes over when the page arrives.
+  let spec = "";
+  try {
+    spec = browser.currentURI.spec;
+  } catch (e) {}
+  if (spec === "about:blank") {
+    debug("seed", "about:blank held");
+    return s;
+  }
   s.loaded = !tab.hasAttribute("busy");
   s.loadedAt = s.started;
   const icon = window.gBrowser.getIcon(tab) || tab.getAttribute("image");
+  debug("seed", s.origin, "loaded=" + s.loaded, "icon=" + (icon ? icon.slice(0, 40) : "none"));
   if (icon) takeIcon(tab, browser, icon);
   query(tab, browser);
   // A page with no icon at all is only decided once the grace has passed, and
@@ -836,9 +897,9 @@ function present() {
   if (!tab || !browser) return;
   const s = seed(tab, browser);
   if (s.source !== undefined) {
-    show(s.source);
+    show(s.source, "select/decided");
   } else if (byOrigin.has(s.origin)) {
-    show(byOrigin.get(s.origin));
+    show(byOrigin.get(s.origin), "select/origin");
   }
   // Otherwise the previous colour holds; the signals for this tab are already
   // in flight, or seed() has just requested them.
@@ -857,6 +918,7 @@ function onAccent(event) {
   const tab = window.gBrowser.getTabForBrowser?.(browser);
   if (!tab) return;
   const s = seed(tab, browser);
+  debug("page", s.origin, phase, themeColour, canvasColour);
   s.page = { themeColour, canvasColour, phase };
   evaluate(tab);
 }
@@ -877,6 +939,7 @@ const progressListener = {
     if (location?.spec === "about:blank" && !tab.hasAttribute("zen-empty-tab")) {
       return;
     }
+    debug("navigate", location?.spec?.slice(0, 60));
     begin(tab, browser);
   },
   // The end of the top-level load: if no icon has arrived by now, none will,
@@ -889,6 +952,7 @@ const progressListener = {
     if (!tab) return;
     const s = seed(tab, browser);
     if (s.loaded) return;
+    debug("load-stop", s.origin);
     s.loaded = true;
     s.loadedAt = window.performance.now();
     evaluate(tab);
@@ -905,6 +969,7 @@ const progressListener = {
     if (!iconURL) return;
     const tab = window.gBrowser.getTabForBrowser?.(browser);
     if (!tab) return;
+    debug("icon", originOf(browser), iconURL.slice(0, 60));
     seed(tab, browser);
     takeIcon(tab, browser, iconURL);
   },
@@ -918,9 +983,9 @@ function onSchemeChange() {
   const tab = window.gBrowser?.selectedTab;
   const s = tab && tabs.get(tab);
   if (s && s.source !== undefined) {
-    show(s.source);
+    show(s.source, "scheme/decided");
   } else if (s && byOrigin.has(s.origin)) {
-    show(byOrigin.get(s.origin));
+    show(byOrigin.get(s.origin), "scheme/origin");
   }
 }
 
