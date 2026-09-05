@@ -14,6 +14,13 @@
 //                when <html> declares none, so those two in that order are the
 //                whole rule.
 //
+// Every report says which phase of the document it comes from - "meta" for a
+// theme-color parsed or changed, "dcl" for DOMContentLoaded, "load" for load.
+// The parent decides from the phase how far to trust the canvas: at "dcl" the
+// stylesheets may still be on their way, at "load" they are in. A report is
+// sent whenever the answer or the phase changes, so "load" always arrives even
+// when it repeats the colours - the parent is waiting for that word.
+//
 // about:blank is skipped outright: the initial document of every navigation is
 // about:blank and fires load like any other, so reporting from it would answer
 // over the real page.
@@ -26,22 +33,31 @@ export class SafariZenAccentChild extends JSWindowActorChild {
   handleEvent(event) {
     switch (event.type) {
       case "DOMContentLoaded":
-      case "pageshow":
+        if (event.target === this.document) this.#report("dcl");
+        break;
       case "load":
-        this.#report();
+      case "pageshow":
+        if (event.target === this.document) this.#report("load");
         break;
       case "DOMMetaAdded":
       case "DOMMetaChanged":
         // Sites that swap theme-color with the colour scheme, or on route
         // changes, do it through these.
-        if (event.target?.name === "theme-color") this.#report();
+        if (event.target?.name === "theme-color") this.#report("meta");
         break;
     }
   }
 
   receiveMessage(message) {
-    if (message.name === "Accent:Get") return this.#read();
+    if (message.name === "Accent:Get") return this.#read(this.#phase());
     return undefined;
+  }
+
+  #phase() {
+    const state = this.document?.readyState;
+    if (state === "complete") return "load";
+    if (state === "interactive") return "dcl";
+    return "meta";
   }
 
   #themeColour() {
@@ -83,26 +99,30 @@ export class SafariZenAccentChild extends JSWindowActorChild {
     );
   }
 
-  #read() {
+  #read(phase) {
     const doc = this.document;
     if (!doc || doc.documentURI === "about:blank") {
-      return { themeColour: null, canvasColour: null };
+      return { themeColour: null, canvasColour: null, phase };
     }
     try {
       return {
         themeColour: this.#themeColour(),
         canvasColour: this.#canvasColour(),
+        phase,
       };
     } catch (e) {
-      return { themeColour: null, canvasColour: null };
+      return { themeColour: null, canvasColour: null, phase };
     }
   }
 
-  #report() {
-    const data = this.#read();
-    // load fires after DOMContentLoaded on every page; a repeat of the same
-    // answer would cost a message and a repaint for nothing.
-    const key = `${data.themeColour}|${data.canvasColour}`;
+  #report(phase) {
+    const data = this.#read(phase);
+    // A phase never goes backwards: a theme-color change after load is still a
+    // "load"-phase answer, so the parent keeps trusting the canvas.
+    if (phase === "meta" && this.document?.readyState !== "loading") {
+      data.phase = this.#phase();
+    }
+    const key = `${data.themeColour}|${data.canvasColour}|${data.phase}`;
     if (key === this.#sent) return;
     this.#sent = key;
     try {

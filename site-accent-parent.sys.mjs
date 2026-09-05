@@ -9,9 +9,13 @@ export class SafariZenAccentParent extends JSWindowActorParent {
   receiveMessage(message) {
     if (message.name !== "Accent:Colour") return;
 
-    const browser = this.browsingContext?.top?.embedderElement;
-    const win = browser?.ownerGlobal;
-    if (!win) return;
+    const bc = this.browsingContext;
+    // topChromeWindow stays valid through a process switch, when
+    // top.embedderElement is intermittently null - the same lesson the canvas
+    // actor learned the hard way.
+    const win = bc?.topChromeWindow;
+    const browser = bc?.top?.embedderElement;
+    if (!win || !browser) return;
 
     try {
       win.dispatchEvent(
@@ -20,6 +24,7 @@ export class SafariZenAccentParent extends JSWindowActorParent {
             browser,
             themeColour: message.data.themeColour,
             canvasColour: message.data.canvasColour,
+            phase: message.data.phase,
           },
         })
       );
