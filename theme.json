@@ -2,7 +2,7 @@
   "id": "safari-zen",
   "name": "Safari-like Zen",
   "description": "Makes Zen feel like Safari on macOS: native window corner radius, a translucent blurred sidebar, Safari-matched sidebar padding, a spring reveal animation, an optional pinned sidebar panel that wears compact mode's float, and a sidebar that follows the current site's colour.",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "author": "prewue",
   "homepage": "https://github.com/prewue/safari-zen",
   "readme": "https://raw.githubusercontent.com/prewue/safari-zen/main/README.md",

@@ -541,34 +541,41 @@ The gap has to be the colour of the page canvas, and it has to become that colou
 the frame the page appears — not before, not after. Those are two separate questions,
 and neither can be answered from the parent process.
 
-**What.** The colour showing at the left edge, resolved from layout in the content
+**What.** The surface the panel floats beside, resolved from layout in the content
 process (`page-canvas-child.sys.mjs`). At three points one CSS pixel in from the edge
-— 25 % / 55 % / 85 % of the viewport height, the same points the pixel sampler used —
-`elementsFromPoint` gives the stack of boxes under the point, top to bottom, and the
-first fully opaque background in that stack is what the eye sees there. Translucent and
-image layers are stepped over, not stopped on: what shows through them is a blend only
-pixels know, so the walk continues to the solid thing behind. `<html>` and `<body>` are
-in the stack, so the CSS canvas is reached when nothing else paints there. Two of three
-agreeing is the answer.
+on the sidebar's side — 25 % / 55 % / 85 % of the viewport height — `elementsFromPoint`
+gives the stack of boxes under the point, top to bottom, and the topmost one with an
+opaque background **that spans at least 90 % of the viewport height** is the surface.
+`<html>` and `<body>` count whatever their box says, because CSS propagates their
+background to the canvas; when nothing under the point is opaque, `<body>`'s background
+is still consulted for the same reason (a short page, where the point lies outside the
+body box). Two of three agreeing is the answer.
 
-This is deliberately *not* the CSS canvas colour, which was the first actor design and
-is wrong more often than it sounds: a great many apps leave `<body>` white and paint a
-dark root `<div>` over it (`agent.pollyreach.ai/auth` was the one that showed it), and
-the canvas is then a colour nobody sees. Reading the stack finds the div; reading the
-canvas finds the white.
+The height test is the whole difference between a steady gap and a nervous one. The
+first design took the first opaque box under the point, whatever its size, and on a
+live page that is whatever the page put there: a list row scrolling past, a hover
+highlight, a toast. `safari-canvas.log` from a real session showed the consequence —
+on one page, **nine changes in seven seconds**, flipping between the canvas and a row
+colour (`rgb(246, 246, 246)` ↔ `rgb(255, 255, 255)`). A box that spans the viewport is a
+surface — the canvas, an app root, a sidebar, a drawer — and a surface only changes
+colour when the page restyles it.
 
-The answer is one of: an opaque colour, which the parent paints as is; or "layout alone
-cannot name it" — a gradient, an image, a translucent stack, or nothing opaque at all —
-and then the parent reads pixels, once, after the paint, which resolves the blend
-correctly because the page is on screen by then. Each read also carries a `ready` flag —
-first contentful paint has happened and the document is on screen — so a query cannot
-paint a placeholder from a page that has not rendered yet.
+This is deliberately *not* the CSS canvas colour either, which was the very first actor
+design and is wrong more often than it sounds: a great many apps leave `<body>` white
+and paint a dark root `<div>` over it (`agent.pollyreach.ai/auth` was the one that
+showed it), and the canvas is then a colour nobody sees. Reading the stack finds the
+div; reading the canvas finds the white.
 
-Pixels were the first design of all, and they are why the gap jumped: a pixel one column
-in from the left edge belongs to whatever the page put there — a sidebar, a banner, a
-video, a lazily loaded image — and changes whenever that does. A box's background changes
-only when the page restyles it. Layout is also cheap enough to read on every paint of a
-load, which rasterising is not.
+A translucent or image layer is not stepped over on the way down. What shows through
+it is a blend only pixels know, so the point is reported as unresolvable — "image" or
+"translucent" — and the parent reads pixels, once, after the paint. An earlier version
+continued past such layers to the solid colour beneath, which on a page with a gradient
+body over a white `<html>` reported white for a surface that was plainly not white.
+
+The edge follows the sidebar: `zen.tabs.vertical.right-side` is mirrored into content
+processes like any pref, so the child reads it itself and samples the right edge for a
+right-hand sidebar; the parent watches `zen-right-side` on `:root` and asks again when
+it flips.
 
 **When.** `MozAfterPaint`, listened for on the content window's `windowRoot` from a
 `JSWindowActorChild`. It fires once a paint has been *composited*, so the first one for
@@ -610,8 +617,19 @@ The listener is armed, not permanent. It is on from the document's creation
 seconds whenever something that could move the colour happens: an attribute change on
 `<html>` or `<body>` (theme toggles flip a class there), a child added to `<head>` (a late
 stylesheet), `pageshow` (bfcache), the document becoming visible, or the parent asking.
-Outside those windows nothing runs. Each paint costs one `getComputedStyle`; a report
-is sent only when the answer changes, so a load is one message.
+Outside those windows nothing runs. The first painted frame is read at once. After it,
+a paint whose `clientRects` do not touch the sampled edge cannot have changed the
+surface and is not read at all, and the rest are coalesced to one read per 40 ms with a
+trailing read, so a burst of paints costs one `elementsFromPoint` pass and the last one
+wins. A report is sent only when the answer changes, so a load is one message.
+
+**`Cu.now()` no longer exists**, and this bit hard. The first version of the child
+timed its windows with it. Gecko removed it; the calls throw `TypeError: Cu.now is not
+a function`. Because `#onPaint` reported *before* it checked the window, the report
+went out and the throw landed on the disarm — the listener never came off, every paint
+of every page was read for the life of the document, and `actorCreated` failed outright
+for a document that was already complete. That, with the edge-pixel reading above, is
+most of what the "jumpy gap" was. `ChromeUtils.now()` is the replacement everywhere.
 
 **The parent applies, it does not decide.** `page-canvas.uc.mjs` writes the variable
 when the *selected* browser reports, and on `TabSelect` from a per-browser `WeakMap`,
@@ -637,14 +655,23 @@ navigation (`tabbrowser.js:2960`), so a page opened from a new tab still carries
 keying the wash off it washed real pages grey, which is exactly the bug that showed on
 YouTube opened from a fresh tab.
 
-**Layers, not just paint.** Across a process switch the compositor briefly has nothing
-for the browser and the `<browser>` shows its own grey placeholder while the new process
-paints into layers nobody is showing yet. The parent can tell — `browser.hasLayers`, and
-`MozLayerTreeReady` when it flips (`AsyncTabSwitcher.sys.mjs:783`) — so a colour for a
-browser without layers is held and applied on that event, with a short timeout as a
-backstop. The same holds on a switch to a tab whose background layers were dropped:
-applying the cached colour in the `TabSelect` handler would lead the switch by the wait,
-so it defers too.
+**Layers, not just paint.** Across a process switch — every cross-site navigation, with
+Fission — the compositor briefly has nothing for the browser and the `<browser>` shows
+its own placeholder while the new process paints into layers nobody is showing yet. The
+parent can tell — `browser.hasLayers`, and `MozLayerTreeReady` when it flips
+(`AsyncTabSwitcher.sys.mjs:158`) — so a colour for a browser without layers is held and
+applied on that event. The same holds on a switch to a tab whose background layers were
+dropped: applying the cached colour in the `TabSelect` handler would lead the switch by
+the wait, so it defers too; measured, the event lands 15–30 ms after the switch.
+
+The hold is *not* released on a short timeout. An earlier version gave up after 600 ms
+and applied anyway, on the reasoning that the tab switcher stops waiting after 400 ms —
+but that reasoning is about tab switches, and on an in-place navigation to a heavy site
+the new process can take longer than that to produce its first frame. Applying then is
+exactly the artefact where the gap turns the new page's colour while the page area is
+still showing the placeholder. Now the wait re-checks `hasLayers` at 2.5 s and only
+forces the colour on at 6 s, as insurance against a browser that never reports layers;
+in practice the event always comes first.
 
 **No network milestone drives the colour.** An earlier version re-queried the page at the
 end of the load (`STATE_STOP | STATE_IS_NETWORK`) as a safety net. It was removed: on a
@@ -684,6 +711,11 @@ itself a visible jump — to grey, under a dark content scheme.
 - The actor modules are cached by the module loader for the life of the process.
   Sine's "Refresh mod styles" re-runs `page-canvas.uc.mjs` but not the `.sys.mjs`
   files; an edit to either actor needs a restart.
+- The content process sandbox only reads the actor modules from *inside* the profile.
+  A `sine-mods/<id>` that is a symlink to a checkout elsewhere loads the `.uc.mjs`
+  scripts fine (parent process) and fails the child modules silently — the console
+  says `Failed to load chrome://sine/content/<id>/page-canvas-child.sys.mjs` and nothing
+  else. Copy, do not link.
 
 `mod.safari.pinned-panel.debug` (hidden, boolean) logs every report and every write
 with a timestamp in the Browser Toolbox console. A navigation should be one `apply`
@@ -717,11 +749,24 @@ painting a placeholder or nothing at all. Both are opaque, so nothing composites
 and video, PDF and images are untouched; the page's own paint covers them exactly, since
 that variable is what it was sampled from, so gap and page move as one.
 
-The tabpanels fill is held off the empty tab (`&:not([zen-has-empty-tab="true"])`), where
-the workspace gradient is meant to show, and the browser's `[transparent="true"]` branch —
-the empty tab again — is left to Zen's wash. Both use the toolbox's fallback pair and
-content-scheme media query, so with the script off the surfaces are Zen's own values and
-nothing changes.
+Both fills are held off the empty tab (`&:not([zen-has-empty-tab="true"])`), where the
+workspace gradient is meant to show through Zen's wash. **Not** off the browser's own
+`[transparent="true"]`, which is what the first version keyed the placeholder on, and
+which is why a page opened from a new tab showed a grey page area beside a page-coloured
+gap while it loaded. Zen sets `transparent` on a browser created for the empty tab and
+never clears it on navigation (`tabbrowser.js:2960`); a site opened from that tab keeps
+the attribute for life, the placeholder override skipped it, and across the process
+switch into the site what showed in the page area was the gradient under Zen's wash —
+grey — while the gap already carried the site's dark colour from the paint report.
+Keying both fills off `:root`'s `zen-has-empty-tab` paints the placeholder the page
+colour on every browser that is showing a page, transparent or not.
+
+The empty tab itself is handled on `TabSelect` in the parent, without asking the page:
+its actor never activates on an initial `about:blank`, and the answer is known anyway.
+The wash is written into `--safari-pin-canvas` rather than left to the CSS branch, so
+that the moment the tab starts navigating and the empty-tab branch drops away, gap and
+placeholder are still the wash and the next change is the new page's own first paint —
+one change, not two.
 
 ### Measuring it, at last
 
@@ -736,6 +781,32 @@ the page by ~0.2 s rather than leading it, and a return to a backgrounded YouTub
 applies `rgb(15,15,15)` on `layers-ready`, never the wash. `mod.safari.pinned-panel.debug`
 turns the log on; the child's own per-paint trace is behind a `DEBUG` constant in
 `page-canvas-child.sys.mjs`, off by default because it is a flood.
+
+The rework of both features was measured without pixels, in an isolated profile,
+because the same question — how many times did it change, and when — can be answered
+from the chrome window alone. The recipe, for next time:
+
+- A throwaway profile with the user's `chrome/JS` and `chrome/utils` (the Sine engine)
+  copied in, a `chrome/sine-mods/mods.json` holding one entry for this mod with
+  `"no-updates": true`, the mod's files **copied** into `chrome/sine-mods/<id>/` (see the
+  sandbox trap above), and a `user.js` carrying the `zen.*`, `mod.safari.*` and `sine.*`
+  prefs from the real profile plus `mod.safari.pinned-panel.debug`.
+- Zen started with `-marionette -remote-allow-system-access -no-remote -profile <dir>`.
+  Without `-remote-allow-system-access` the chrome context is refused; the command to
+  enter it is `Marionette:SetContext`, not `WebDriver:SetContext`, in this build.
+- A probe installed in the chrome window with `WebDriver:ExecuteScript`: a 16 ms
+  interval that records every change of `--safari-pin-canvas`, `--safari-accent-top`,
+  `[safari-accent]` and the current URL against `performance.now()`. Navigations go
+  through `openTrustedLinkIn(url, "current")` and `gBrowser.addTab`, tab switches by
+  element reference — `gBrowser.tabs[i]` is not stable under Zen's own reordering.
+- One Marionette session at a time: a client that dies without closing its socket
+  leaves the session active and every later connection is refused with "an active
+  session has been found".
+
+The result the rework was accepted on, from that harness: one `apply` per document on
+seven sites, none on a same-origin navigation or a reload, `layers-ready` 15–30 ms after
+every tab switch, and a sidebar accent that changed exactly once per new site and not
+at all within one.
 
 ### Dead end: chasing the load-time jump from the parent
 
@@ -878,7 +949,7 @@ actor pair. The sidebar takes the colour of the site you are on, in both modes.
 ### Where the colour comes from, and what does not help
 
 A cascade: the favicon's dominant colour, then `<meta name="theme-color">`, then the
-page's canvas colour.
+page's canvas colour, then the favicon's monochrome reading.
 
 Two things that look like they would help, and do not:
 
@@ -892,11 +963,68 @@ Two things that look like they would help, and do not:
   is a different spec, fetched on demand and only for Taskbar Tabs. That tier is the
   entire reason this feature needs an actor.
 
-What is reusable is the *policy*, not the arithmetic: `getToolbarModifiedBaseRaw`
-(Zen's sidebar base plus its acrylic alpha), `blendColors` and `contrastRatio` off
-`window.gZenThemePicker`. The HSL conversions are local on purpose — Zen's
-`hslToRgb` takes hue as a fraction while its `rgbToHsl` returns degrees, and a silent
-convention mismatch there would be a wrong colour rather than an error.
+What is reusable is the *policy*, not the arithmetic: `contrastRatio` off
+`window.gZenThemePicker`. The HSL conversions are local on purpose — Zen's `hslToRgb`
+takes hue as a fraction while its `rgbToHsl` returns degrees, and a silent convention
+mismatch there would be a wrong colour rather than an error.
+
+### One decision per navigation
+
+The tiers do not arrive in cascade order, and the first version applied each as it
+came. On a navigation that meant: the actor's DOMContentLoaded report recomputed the
+cascade with *no icon* and landed on the canvas — a grey — then the favicon arrived and
+the sidebar moved again. Two or three cross-fades per navigation, and on a site whose
+colour had not changed at all — Google search to Google search — a dip to grey and back.
+Two facts about the icon in `tabbrowser.js` made that unavoidable from the old shape:
+
+- When a new document commits, `onLocationChange` nulls `browser.mIconURL` but leaves
+  the tab's `image` attribute alone "to avoid flickering" (`tabbrowser.js:10115-10123`).
+  `gBrowser.getIcon()` is therefore empty for the whole load, and the attribute is the
+  *previous* page's icon; neither says anything about the new document.
+- `setIcon()` only fires `TabAttrModified` when the attribute's value changes
+  (`tabbrowser.js:1528`). The same site's icon arriving again — every same-origin
+  navigation — fires nothing. What it does fire, every time, is `onLinkIconAvailable`
+  on the tabs-progress listeners (`tabbrowser.js:1548`), and that is the signal used.
+
+So `site-accent.uc.mjs` keeps, per tab, the state of the current document — an epoch
+bumped on every commit, the icon set and what it decoded to, the actor's last report
+and its phase, whether the top-level load has stopped — and every signal re-runs one
+function, `decide()`, which returns either "not yet" or an answer and whether it is
+**final**. A chromatic favicon is final the moment it decodes. Everything below it
+waits until the icon question is settled: decoded to nothing, or no icon coming. "No
+icon coming" is the end of the top-level load (`STATE_STOP | STATE_IS_NETWORK`, the same
+moment tabbrowser clears the attribute) with no `pendingicon` on the tab, plus a 400 ms
+grace, because the icon's request can outlive the document's — measured on Google,
+the stop came first and the old shape would have gone grey on it. `theme-color` is then
+final at once; the canvas is final once the page has reached `load` (its stylesheets
+are in) and a guess before that; the icon's monochrome reading is final; and "no
+accent" is final only once the page has said its last word. A hard deadline of 4 s
+applies the best available answer on a page that streams forever.
+
+Only a final answer is applied, remembered for the origin, and used as the hold. While
+the answer is pending the sidebar keeps its previous colour — so a new site cross-fades
+once, when its own colour is known, typically 200–600 ms after the navigation and
+absorbed by the transition. A page on an origin seen before takes that origin's colour
+at the navigation itself, which is what makes moving around one site change nothing.
+Measured: seven sites, one cross-fade each; zero on a same-origin navigation, a reload,
+or a redirect chain.
+
+What is remembered — per tab and per origin — is the **raw source colour**, not the
+normalised accent. Normalisation depends on Zen's dark-mode decision, which a workspace
+theme can flip without the system scheme moving; the script watches
+`zen-should-be-dark-mode` on `:root` as well as `prefers-color-scheme`, and on either
+re-normalises the selected tab's source without re-reading anything.
+
+Two `about:blank`s that are not pages, both of which the first cut of this model took for
+Zen's empty tab and faded the sidebar to the theme on: the initial document of a new
+browser, and the one a process switch re-creates the browser at — every cross-site
+navigation passes through the second. `onLocationChange` skips `about:blank` unless the
+tab carries `zen-empty-tab`, and a tab at `about:blank` without it is held, not decided.
+
+The child actor stamps every report with its phase — `meta`, `dcl`, `load` — and sends
+the `load` one even when the colours repeat, since the parent is waiting for that word
+before it trusts the canvas. It also answers `Accent:Get`, for a tab that was open
+before the listener attached.
 
 ### The compositing knob
 
@@ -1050,10 +1178,10 @@ origin, so whichever domain happened to be unlucky on its first visit stayed col
 for the session while its twin worked fine. Nothing about the site differed; only the
 timing of the first look did.
 
-For the same reason a miss schedules one look back after `RETRY_MS`. `TabAttrModified`
-does not fire for an icon that was already set before the listener attached, so without
-it a tab opened from a restored session or a background load could sit colourless with
-nothing coming to correct it.
+For the same reason an icon that was set but would not decode gets one more attempt
+after `RETRY_MS`; an icon that was already set before the listener attached — a
+restored session, a background load — is read from `getIcon()` / the `image` attribute
+when the tab is first seen.
 
 When every tier declines, the reason is logged — which icon URL, whether it decoded,
 what the actor said. A silent failure here is indistinguishable from the feature being
@@ -1070,13 +1198,15 @@ monochrome site gets a monochrome sidebar, which is what it should have. Saturat
 only clamped upward when there is chroma to clamp (`s >= 0.08`), so a grey source stays
 grey rather than having a hue invented for it.
 
-### Why timing is not a problem here
+### Why timing is a different problem here
 
 The gutter feature in §8 has to land on a specific frame, which is why it needs the
 content process to say when. This one *wants* a half-second cross-fade, so an accent
-arriving a few frames early or late is absorbed by the transition rather than seen as
-a jump. That is why this feature can afford a cascade with an async favicon decode in
-it and the previous one cannot.
+arriving a few frames early or late is absorbed by the transition rather than seen as a
+jump — but only if it arrives *once*. The first version leaned on that and applied every
+tier as it came, and the transition duly absorbed each of them into a visible wander.
+The cross-fade buys tolerance on the moment, not on the count; the count is what the
+decision model above is for.
 
 ---
 
