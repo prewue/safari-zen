@@ -1,16 +1,10 @@
-// Parent side of the page canvas colour.
-//
-// Deliberately thin: it turns the child's message into a DOM event on the chrome
-// window and stops there, so every decision - what a transparent answer means,
-// when to look at pixels instead, when the colour is applied - stays in
-// page-canvas.uc.mjs where the rest of the mod can see it.
+// Parent side: relays the child's messages as DOM events on the chrome window.
+// topChromeWindow stays valid through a process switch; top.embedderElement
+// does not always.
 
 export class SafariZenCanvasParent extends JSWindowActorParent {
   receiveMessage(message) {
     const bc = this.browsingContext;
-    // topChromeWindow is populated even in moments when the browser element
-    // reference is briefly not - during a process switch, say - so it is the
-    // reliable way to reach the chrome window from here.
     const win = bc?.topChromeWindow;
     const browser = bc?.top?.embedderElement;
     if (!win || !browser) return;

@@ -1,17 +1,7 @@
-// Folder motion and space swipe progress.
-//
-// Zen animates folder contents from JS (ZenFolders.mjs) with a hardcoded
-// 0.12s / "easeInOut", while the folder icon animates from CSS over 0.3s and
-// the space chevron over 0.1s. Three different timings for one gesture. The
-// content duration is also fixed regardless of how much content there is, so
-// a two-tab folder and a fifteen-tab folder move at very different speeds.
-//
-// The pinned tabs section is deliberately left alone: animating it from here
-// fought Zen's own collapse and came out jerky in both directions.
-//
-// This wraps gZenUIManager.motion.animate, retimes those calls, and publishes
-// the chosen duration and easing as CSS variables so the icon and chevrons can
-// ride the exact same timing.
+// Folder motion and space swipe progress. Wraps gZenUIManager.motion.animate
+// to retime Zen's folder calls by content height and publishes the timing as
+// CSS variables; wraps _organizeWorkspaceStripLocations to publish swipe
+// progress. DEV.md §5.
 
 const PREF = {
   enabled: "mod.safari.folder-motion",
@@ -22,24 +12,16 @@ const PREF = {
 const ZEN_FOLDER_DURATION = 0.12;
 const ZEN_FOLDER_EASE = "easeInOut";
 
-// Light spring on the way in (2.2% overshoot, peaking at 70%), no overshoot on
-// the way out. Both are fast off the mark: a folder toggle is a click, so it
-// has to answer immediately in either direction. The asymmetry lives in the
-// duration and the overshoot, not in a slow start.
+// Light spring on the way in, none on the way out; past NO_BOUNCE_ABOVE px the
+// open curve only decelerates.
 const EASE_OPEN = [0.34, 1.26, 0.64, 1];
 const EASE_OPEN_TALL = [0.22, 0.85, 0.3, 1];
 const EASE_CLOSE = [0.25, 0.9, 0.35, 1];
-
-// The overshoot is a percentage of the distance travelled, so on a tall folder
-// 2.2% turns into a large, springy bounce. Past this height the open curve
-// drops the overshoot and just decelerates.
 const NO_BOUNCE_ABOVE = 180;
-
 const MIN_DURATION = 0.18;
 const MAX_DURATION = 0.42;
 const PER_PX = 0.0004;
 const CLOSE_RATIO = 0.75;
-
 const TAG = "[Safari-like Zen / motion]";
 
 function getBool(p, d) {
@@ -74,9 +56,7 @@ function main() {
     return;
   }
 
-  // Folder heights change while the batch runs, so measure once per gesture
-  // and reuse it for every item in that batch. Without this the items in one
-  // folder would each get their own duration and visibly drift apart.
+  // measured once per gesture so every item in a batch gets the same duration
   const heightCache = new WeakMap();
   function folderDuration(el) {
     let folder = null;
@@ -116,9 +96,8 @@ function main() {
     return false;
   }
 
+  // the folder icon and the space chevron transition off these
   function publish(duration, ease) {
-    // The folder icon and the space chevron transition off these, so all three
-    // parts of the gesture share one timing.
     root.style.setProperty("--safari-folder-time", duration + "s");
     root.style.setProperty("--safari-folder-ease", `cubic-bezier(${ease.join(",")})`);
   }
@@ -145,9 +124,8 @@ function main() {
 
       const next = { ...opts, duration, ease };
 
-      // Stagger the fade against the height so the two do not mush together:
-      // opening, the container leads and the content fades in behind it;
-      // closing, the content is gone before the container finishes.
+      // opening, the container leads and the content fades in behind; closing,
+      // the content is gone before the container finishes
       if (target && Object.hasOwn(target, "opacity")) {
         next.opacity = shrinking
           ? { duration: duration * 0.5, ease: "linear" }
@@ -172,12 +150,8 @@ function main() {
   );
 }
 
-// ---- Space swipe progress ------------------------------------------------
-// Zen never publishes how far a space swipe has travelled: _handleSwipeUpdate
-// computes the offset and hands it straight to _organizeWorkspaceStripLocations
-// as its third argument. Wrapping that method is the one place the number is
-// available, so the blur can follow the finger instead of flashing on and off
-// at the edges of the gesture.
+// ---- space swipe progress. --safari-space-progress follows the finger;
+// --safari-space-track is 0s while it does and SETTLE once the change commits.
 const SETTLE = "0.32s";
 
 function trackSwipeProgress(root) {
@@ -189,9 +163,6 @@ function trackSwipeProgress(root) {
     return;
   }
 
-  // `track` is the transition applied to the blur. Zero while a finger is
-  // driving it, so the blur is locked to the movement; non-zero once the
-  // change commits, so the settle is eased rather than snapped.
   const setProgress = (p, track = "0s") => {
     try {
       root.style.setProperty("--safari-space-progress", String(p));
@@ -199,7 +170,7 @@ function trackSwipeProgress(root) {
     } catch (e) {}
   };
 
-  // Same measurement ZenSpacesSwipe uses for its own normalisation.
+  // the same measurement ZenSpacesSwipe normalises against
   const stripWidth = () => {
     try {
       const w =
@@ -235,9 +206,7 @@ function trackSwipeProgress(root) {
     return original(workspace, justMove, offsetPixels, ...rest);
   };
 
-  // The gesture attribute can outlive the gesture, so never leave the blur
-  // depending on it alone: zero the progress when it clears, and on a watchdog
-  // in case it never does.
+  // swipe-gesture can outlive the gesture: zero on clear, and on a watchdog
   let watchdog = null;
   const observer = new window.MutationObserver(() => {
     if (root.hasAttribute("swipe-gesture")) {
@@ -250,11 +219,8 @@ function trackSwipeProgress(root) {
   });
   observer.observe(root, { attributes: true, attributeFilter: ["swipe-gesture"] });
 
-  // The commit does not wait for the gesture to be released: `active` moves to
-  // the new space while `swipe-gesture` is still up, so the space now in view
-  // would match the outgoing rule and sit there holding the last progress
-  // value. Zeroing on the attribute move clears it the instant it stops being
-  // the one you are leaving.
+  // `active` moves to the new space while swipe-gesture is still up; zero the
+  // instant a space stops being the one you are leaving
   const activeObserver = new window.MutationObserver(records => {
     for (const rec of records) {
       if (rec.target.localName === "zen-workspace") {

@@ -1,7 +1,9 @@
 # DEV notes
 
 Internals, measurements and dead ends behind this mod. Written so a future
-session (human or AI) can pick it up without redoing the research.
+session (human or AI) can pick it up without redoing the research. The source
+files carry only short comments; everything that needs a paragraph is here, and
+the comments point at the section that has it.
 
 Everything below was measured on **macOS 26.5 (Tahoe)** with **Zen 1.21.15b**
 (`XUL` built against SDK 26.5, arm64).
@@ -233,7 +235,37 @@ at the start of the slide.
 
 ---
 
-## 5. Space swipe progress
+## 5. Folder motion and space swipe progress
+
+### Folder motion
+
+Zen runs three timings for one gesture: folder contents animate from JS
+(`ZenFolders.mjs:1467/1537`) with a hardcoded `0.12s` / `easeInOut`, the folder
+icon from CSS over `0.3s` (`zen-folders.css:120`), the space chevron over `0.1s`
+(`zen-workspaces.css:695`). The icon finishing 2.5× after the thing it represents
+is the visible part. The content duration is also fixed regardless of how much
+content there is, so a two-tab folder and a fifteen-tab folder move at very
+different speeds.
+
+`folder-motion.uc.mjs` wraps `gZenUIManager.motion.animate` and recognises Zen's
+folder calls by their exact signature (`duration: 0.12, ease: "easeInOut"`). Each
+gets one duration from the folder's height — `0.18s + 0.0004s/px`, clamped to
+`0.18–0.42s`, closing at 75 % of that — measured once per gesture and cached for
+150 ms, so every item in a batch moves together. Opening gets a light spring
+(`cubic-bezier(0.34, 1.26, 0.64, 1)`, 2.2 % overshoot peaking at 70 %); above 180px
+the overshoot would be a large bounce, so a tall folder decelerates instead
+(`0.22, 0.85, 0.3, 1`). Closing never overshoots (`0.25, 0.9, 0.35, 1`). Both are
+fast off the mark: a folder toggle is a click. When the target carries an opacity,
+the fade is staggered against the height — opening, the container leads and the
+content fades in behind; closing, the content is gone before the container
+finishes. The duration and easing go out as `--safari-folder-time` /
+`--safari-folder-ease`, and chrome.css section 9 puts the icon and the chevron on
+them.
+
+The pinned-tabs section is left alone on purpose: animating it from here fought
+Zen's own collapse and came out jerky in both directions.
+
+### Space swipe progress
 
 Zen never publishes how far a space swipe has travelled. `_handleSwipeUpdate`
 computes the offset and passes it straight to
@@ -327,7 +359,15 @@ ToolbarWindow
 
 ---
 
-## 7. Platform scope
+## 7. Platform scope, and Sine's JS gate
+
+Sine runs a mod's `.uc.mjs` scripts only when `sine.allow-unsafe-js` is true or the
+mod's `origin` is `"store"` (`utils.sys.mjs:343`, `getScripts`). A GitHub install has
+no origin, so without the pref every script here is silently skipped and only
+`chrome.css` applies — the panel floats over Zen's flat fallback colours, the accent
+never appears, the window corners stay Zen's. The README walks the user through the
+switch (Settings → Sine → General, "Enable installing JS from unofficial sources"); a
+test profile needs the pref in its `user.js` too.
 
 Only the window corner radius is macOS-specific — it shells out to
 `/usr/bin/defaults` and self-guards on `Services.appinfo.OS === "Darwin"`. The
@@ -626,8 +666,8 @@ seconds whenever something that could move the colour happens: an attribute chan
 `<html>` or `<body>` (theme toggles flip a class there), a child added to `<head>` (a late
 stylesheet), `pageshow` (bfcache), the document becoming visible, or the parent asking.
 Outside those windows nothing runs. The first painted frame is read at once. After it,
-a paint whose `clientRects` do not touch the sampled edge cannot have changed the
-surface and is not read at all, and the rest are coalesced to one read per 40 ms with a
+a paint whose `clientRects` do not reach into the 8px strip at the sampled edge cannot
+have changed the surface and is not read at all, and the rest are coalesced to one read per 40 ms with a
 trailing read, so a burst of paints costs one `elementsFromPoint` pass and the last one
 wins. A report is sent only when the answer changes, so a load is one message.
 
@@ -1163,7 +1203,7 @@ completely alone:
 
 | | dark chrome | light chrome |
 |---|---|---|
-| lightness band | 0.14 – 0.30 | 0.80 – 0.94 |
+| lightness band | 0.16 – 0.34 | 0.78 – 0.93 |
 | saturation | clamped 0.28 – 0.80, and only when `s >= 0.08` | same |
 
 The two ends are that band's value plus and minus `SHEEN`, lighter at the top — a
@@ -1183,7 +1223,12 @@ belongs on `:root`, and everything below then inherits a value that is already m
 
 `--safari-accent-scrim` is registered as a `<color>` for the same reason, and fades to
 `rgba(…, 0)` rather than being dropped, so the theme is never revealed through a scrim
-that is still darkening it.
+that is still darkening it. The `[safari-accent]` attribute that drops the theme layer
+goes on at once when an accent arrives — the theme has to be gone before the accent is
+composited over it — and comes off only `FADE_MS + 40` after the accent was cleared, so
+the theme reappears under a colour that is already transparent. The scrim itself is
+written by the script, not by `light-dark()` in CSS: that would resolve against the
+chrome colour scheme rather than Zen's own dark-mode decision for the theme.
 
 ### Favicon scoring
 
@@ -1253,7 +1298,73 @@ decision model above is for.
 
 ---
 
-## 10. Method notes
+## 10. chrome.css notes
+
+The sections of `chrome.css` that are not covered above.
+
+### 3 and 3b — inner padding
+
+Compact's titlebar padding is Zen's own selector with per-side values instead of the
+uniform `var(--zen-toolbox-padding)`:
+`:root[zen-compact-mode="true"]:not([customizing]):not([inDOMFullscreen="true"])`
+under `@media -moz-pref("zen.view.compact.hide-tabbar") or -moz-pref("zen.view.use-single-toolbar")`,
+`&:not([zen-compact-animating]) #navigator-toolbox:not([animate="true"]) #titlebar`,
+`padding: 2px 8px 8px 8px`. Section 3 targets `#titlebar` because that is the box
+compact's panel covers. Pinned, the panel is inset inside the toolbox instead, so 3b
+puts the same values on `#navigator-toolbox`, on top of the gap (which is padding there
+too, section 10). Collapsed is left to section 10, which drops the horizontal padding
+the way compact does.
+
+### 6 — liquid glass search field
+
+The values come from the ZenSidebar design and were verified by sampling the exported
+PNG, each since lowered by two points:
+
+| part | value |
+|---|---|
+| edge gradient (horizontal) | left 15 % → 8 % at 50 % → right 25 % white; light mode a flat 10.2 % black |
+| fill (vertical) | top 5.1 % → bottom 10.2 % |
+| dark inner glow | `inset 0 -4px 8px` white 5 % |
+| light drop shadow | `0 4px 7px` black 5.9 % |
+
+The stroke is outer-aligned in the design, so it is drawn by an `::after` at
+`inset: -1px` with a masked 1px padding rather than a border, which would change the
+field's metrics. `::before` is already Zen's (`smartbar.css:80`). Both shadows are
+declared at once and the one that does not belong to the scheme is made transparent,
+because `inset` cannot be switched by `light-dark()`. No `!important` is needed on the
+`::after`: the mod creates it, so no author rule competes.
+
+### 7 — tab hover
+
+Two parts of one event on one timing (0.2s). The tab background has no transition at
+all in Zen or Firefox — `--tab-background-color-hover` (`tabs.css:916`) and the selected
+colour snap in — so it gets one, with `outline-color` alongside because Firefox switches
+it on hover too. The buttons are the harder half: Zen reveals them with `display` alone
+(`vertical-tabs.css:672-681`, `:902-906`). `transition-behavior: allow-discrete` keeps the
+element displayed for the duration so it can fade out, and `@starting-style` gives it a
+state to animate from on the way in; Firefox ships both in its own chrome CSS
+(`tabs.css:1127`, `fullscreen-and-pointerlock.css:67`). The two hidden-state selectors are
+exact complements of Zen's reveal conditions — close on `:hover` or
+`[multiselected][selected]`, reset on `:hover` or `[visuallyselected]` — so no button Zen
+keeps visible can end up faded out. Long enough to read as a fade, short enough that
+running the pointer down a list of tabs leaves no smear.
+
+### 9 — folder and chevron timing
+
+Rides `--safari-folder-time` / `--safari-folder-ease` from `folder-motion.uc.mjs` (§5);
+the fallbacks (`0.24s ease-out`) only apply before the script has run. The chevron's
+opacity runs at 60 % of the duration.
+
+### Origin and `!important`
+
+Every rule in this file that touches a property Zen also declares needs `!important`:
+Sine loads the sheet as a user sheet, and user-normal loses to author-normal (§8,
+"Origin trap"). The two rules that create their own pseudo-element (section 6) are the
+exception.
+
+---
+
+## 11. Method notes
 
 Useful techniques if any of this needs re-verifying:
 

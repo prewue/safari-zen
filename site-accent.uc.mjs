@@ -1,94 +1,8 @@
 // Site accent colour for the sidebar.
 //
-// The sidebar takes the colour of the site you are on, in compact mode and
-// pinned mode alike, and cross-fades when you move between pages.
-//
-// ---------------------------------------------------------------------------
-// Where the colour comes from
-// ---------------------------------------------------------------------------
-//
-// A cascade, in this order:
-//
-//   1. the favicon's dominant colour - the only per-site signal Firefox already
-//      tracks, and the one that reads as "the brand";
-//   2. <meta name="theme-color"> - the site's own declaration. Firefox does not
-//      parse it, so it arrives from site-accent-child.sys.mjs;
-//   3. the page's canvas colour, from the same actor;
-//   4. the favicon's monochrome reading, so a site with no colour anywhere still
-//      gets a sidebar of its own rather than the workspace gradient.
-//
-// Zen's getMostDominantColor is a false friend and is not used: it reads the
-// dots of the user's own workspace gradient (ZenGradientGenerator.mjs:1489), not
-// anything about the page.
-//
-// ---------------------------------------------------------------------------
-// One decision per navigation
-// ---------------------------------------------------------------------------
-//
-// The tiers do not arrive in cascade order. theme-color is parsed with <head>
-// and reported at once; the favicon is requested when <head> is parsed and
-// lands a fetch later; the canvas is only trustworthy once the stylesheets are
-// in. Applying each tier as it arrives painted the sidebar two or three times
-// per navigation - grey, then the theme-color, then the favicon - which is the
-// "jitter" this file exists to prevent.
-//
-// So nothing is applied until the answer is settled. Every tab carries the
-// state of its current document (`tabs`, below): which icon it has set and what
-// it decoded to, what the page reported, whether the load has finished. Each
-// signal re-runs decide(), which says either "not yet" or gives an answer and
-// whether it is final - a chromatic favicon is final the moment it decodes,
-// theme-color is final once the favicon question is settled, and so on. Only a
-// final answer is applied, remembered for the origin and used as the hold.
-//
-// While the answer is pending the sidebar keeps its previous colour. A page on
-// an origin seen before takes that origin's colour at the navigation itself,
-// so moving around one site never changes anything, and a new site cross-fades
-// once, when its own colour is known - typically a few hundred milliseconds
-// after the navigation, absorbed by the transition.
-//
-// Two things Zen does with the icon make the signals here what they are:
-//
-//   - tabbrowser nulls browser.mIconURL when a new document commits, but leaves
-//     the tab's `image` attribute alone until the load ends "to avoid
-//     flickering" (tabbrowser.js:10115-10123). gBrowser.getIcon() is therefore
-//     empty for the whole load, and the attribute is the previous page's icon.
-//     Neither is a signal for the new document.
-//   - setIcon() calls onLinkIconAvailable on every tabs-progress listener each
-//     time an icon is set, whether or not the attribute changed (tabbrowser.js
-//     :1548). That is the signal - and it fires even when the new icon is the
-//     same as the old one, which TabAttrModified does not.
-//
-// A tab that has no icon at all gets there via the end of the load: STATE_STOP
-// on the top-level network request is when tabbrowser itself gives up on the
-// icon and clears the attribute. A hard deadline backs both up for a page that
-// streams forever.
-//
-// ---------------------------------------------------------------------------
-// What is done with the colour
-// ---------------------------------------------------------------------------
-//
-// The accent keeps the site's hue and chroma, and only its lightness is clamped
-// into the band the current scheme already occupies. Taken literally, "the
-// site's colour" paints a #ff0000 sidebar on YouTube with white tab labels on
-// saturated red. Clamping instead means no chrome text colour has to be touched,
-// so nothing here fights ZenGradientGenerator's own zen-should-be-dark-mode /
-// --toolbox-textcolor writes.
-//
-// The raw source colour is what is remembered, per tab and per origin, and the
-// normalised accent is derived from it at apply time. That is what lets a
-// scheme change - system dark mode, or a workspace whose theme flips Zen's own
-// dark-mode decision - re-normalise every colour without re-reading anything.
-//
-// The accent is translucent, but it is not laid over the workspace theme: while
-// an accent is showing, :root carries [safari-accent] and section 11 of
-// chrome.css drops the theme layer, so what is behind the accent is the panel's
-// own blur. A scrim settles that blur to something known first, so the same
-// blue is legible over a white page and a dark one alike.
-//
-// Two values are published, --safari-accent-top and --safari-accent-bottom: a
-// shallow vertical gradient in the site's own hue. Both fade to transparent
-// when there is no accent, so "no accent here" is the same animation running
-// backwards.
+// Cascade: favicon, <meta name="theme-color">, page canvas, monochrome favicon.
+// One decision per navigation; the previous colour holds until it is made.
+// Why it is shaped this way, the measurements and the traps: DEV.md §9.
 
 const PREF = "mod.safari.site-accent";
 const VAR_TOP = "--safari-accent-top";
@@ -97,93 +11,52 @@ const VAR_SCRIM = "--safari-accent-scrim";
 const ATTR = "safari-accent";
 const ACTOR = "SafariZenAccent";
 
-// Enough for the colour to read as itself, little enough that the blur behind it
-// still does. Nothing shows through it but the scrim and the backdrop-filter.
+// Compositing. FADE_MS must match --safari-accent-time in chrome.css.
 const ACCENT_ALPHA = 0.68;
-
-// How far the scrim settles the backdrop toward the scheme's own extreme. Higher
-// is more legible and less glassy; this is the point where the worst case a site
-// can produce still clears the contrast floor.
 const SCRIM_ALPHA = 0.62;
-
-// Half the spread between the two ends of the gradient, in lightness.
 const SHEEN = 0.035;
-
-// Must match --safari-accent-time in chrome.css: the theme layer is only
-// restored once the accent has finished fading out, or the sidebar would snap.
 const FADE_MS = 500;
 
-// How long a navigation may stay undecided before the best available answer is
-// applied anyway. Past this the page is streaming, or its icon is not coming,
-// and a late correction is better than a sidebar stuck on the previous site.
+// Deciding. Undecided past SETTLE_MAX_MS applies the best guess; after the
+// top-level load stops, ICON_GRACE_MS is left for an icon still in flight.
 const SETTLE_MAX_MS = 4000;
-
-// The end of the load is where tabbrowser gives up on an icon, but the icon's
-// own request can outlive the document's, and a tab that was busy when the
-// icon started loading says so with `pendingicon`. A page with neither gets
-// this long after the load for a straggler before the lower tiers decide.
 const ICON_GRACE_MS = 400;
-
-// One more attempt at an icon that was set but would not decode - usually
-// Places has not stored it yet.
 const RETRY_MS = 900;
 
 // Favicon scoring.
 const ICON_SIZE = 32;
 const MIN_ALPHA = 128;
-const ICON_MIN_SATURATION = 0.15; // a pixel below this is ink or paper, not colour
-// The winning bucket's mean saturation has to clear this, or the "colour" is a
-// handful of anti-aliased pixels at the edge of a monochrome mark - GitHub's
-// dark icon scores 0.16 and came out as a blue-grey accent that then lost to
-// the site's theme-color a frame later.
+const ICON_MIN_SATURATION = 0.15;
 const ICON_MIN_MEAN_SATURATION = 0.22;
-const MAX_LIGHTNESS = 0.93; // icon paper
-const MIN_LIGHTNESS = 0.07; // icon ink
+const MAX_LIGHTNESS = 0.93;
+const MIN_LIGHTNESS = 0.07;
 const HUE_BINS = 24;
 
-// Normalisation. Saturation is only pushed up when there is chroma to push: a
-// genuinely neutral source stays neutral rather than having a hue invented,
-// which is what keeps a monochrome site's sidebar monochrome.
+// Normalisation: hue and chroma kept, lightness clamped into the scheme's band.
 const NEUTRAL_BELOW = 0.08;
 const SAT_MIN = 0.28;
 const SAT_MAX = 0.80;
-
-// The lightness the sidebar is allowed to occupy. A source inside the band is
-// left alone entirely.
 const L_DARK = [0.16, 0.34];
 const L_LIGHT = [0.78, 0.93];
-
 const MIN_CONTRAST = 4.5;
-
-// Icons that are Zen's own, not the site's.
 const SKIP_SCHEMES = ["chrome:", "about:", "resource:"];
-
 const ORIGIN_LIMIT = 64;
-
 const TAG = "[Safari-like Zen / accent]";
-
-// Sibling modules, resolved off this file's own URL: the mod folder is whatever
-// id Sine fixed at first install, not necessarily the one in theme.json.
 const HERE = import.meta.url.split("?")[0].replace(/[^/]+$/, "");
-
 const root = document.documentElement;
 
-// The state of each tab's current document - see stateOf().
+// tab -> state of its current document (stateOf). iconColours: decoded icons
+// by URL. byOrigin: final source colours, raw rgb so a scheme change
+// re-normalises without re-reading.
 const tabs = new WeakMap();
-// Decoded favicons, keyed by icon URL - the expensive part, and stable.
 const iconColours = new Map();
-// Final source colours, keyed by origin, so a revisit is instant. Raw rgb, not
-// the normalised accent, so a scheme change does not invalidate them.
 const byOrigin = new Map();
-
 let last = "";
 let listening = false;
 let fadeTimer = null;
 let darkObserver = null;
 
-// Hidden. Logs every signal and every decision with a timestamp - to the
-// console and, appended, to safari-accent.log in the profile - so "why did it
-// change twice" is a trace rather than a guess.
+// Hidden trace: console and safari-accent.log in the profile.
 const DEBUG_PREF = "mod.safari.site-accent.debug";
 const LOG_FILE = "safari-accent.log";
 let logPath = null;
@@ -213,12 +86,7 @@ function enabled() {
   }
 }
 
-// ---- colour maths ---------------------------------------------------------
-// The conversions are local because Zen's differ in convention (its hslToRgb
-// takes hue as a fraction, its rgbToHsl returns degrees) and a silent mismatch
-// here would be a wrong colour rather than an error. Zen's own helpers are used
-// for the things that encode *policy* rather than arithmetic - see contrastRatio.
-
+// ---- colour maths. Local HSL conversions: Zen's differ in convention.
 const picker = () => window.gZenThemePicker;
 
 function parseColour(value) {
@@ -310,7 +178,6 @@ function contrastRatio(a, b) {
   return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
 }
 
-// `over` at `alpha`, on top of `under`.
 function compose(under, over, alpha) {
   return [
     Math.round(over[0] * alpha + under[0] * (1 - alpha)),
@@ -343,20 +210,11 @@ function textColour() {
   return isDarkChrome() ? [255, 255, 255] : [0, 0, 0];
 }
 
-// ---- favicon --------------------------------------------------------------
-
+// ---- favicon
 const NO_ICON = { chromatic: null, neutral: null };
 
-// Two ways to get the bytes, because one is not enough.
-//
-// fetch() handles data: and http(s): icons straight from cache, but Zen hands
-// out `moz-remote-image:` URLs for SVG favicons - a protocol for re-encoding an
-// image safely - and fetch cannot read those at all. That is not an edge case:
-// it is why GitHub kept the workspace gradient and why Claude fell through to
-// its page background instead of taking the orange off its own mark.
-//
-// Places already holds the decoded bytes for any icon it has seen, so it is the
-// fallback: local data, no protocol handler and no CORS involved.
+// fetch() reads data: and http(s): icons; Places holds the bytes of any icon
+// it has seen, including the moz-remote-image: SVGs fetch cannot read.
 async function iconBlob(url, browser) {
   try {
     const response = await fetch(url);
@@ -378,12 +236,8 @@ async function iconBlob(url, browser) {
   return null;
 }
 
-// Last resort, and the one that handles what the other two cannot: let the
-// browser render the icon itself. An <img> in a chrome document resolves every
-// scheme Zen hands out - moz-remote-image:, page-icon:, data: - and rasterises
-// an SVG that createImageBitmap would refuse for having no intrinsic size.
-// Reading the pixels back needs a system-principal document, which is what this
-// script runs in.
+// Last resort: let the browser render it. Resolves every scheme Zen hands out
+// and rasterises an SVG without intrinsic size.
 async function iconPixelsViaImage(url) {
   const img = new window.Image();
   img.src = url;
@@ -399,11 +253,11 @@ async function iconPixels(url, browser) {
   const blob = await iconBlob(url, browser);
   if (blob) {
     try {
-      // "pixelated" on purpose: smooth downscaling averages neighbouring pixels
-      // and invents hues that are in no part of the icon.
       const bitmap = await createImageBitmap(blob, {
         resizeWidth: ICON_SIZE,
         resizeHeight: ICON_SIZE,
+
+        // smooth downscaling invents hues
         resizeQuality: "pixelated",
       });
       try {
@@ -437,8 +291,7 @@ async function accentFromIcon(url, browser) {
     colour = NO_ICON;
   }
 
-  // Only remember a real answer: a failure here is usually "Places has not
-  // stored it yet", and caching that would make it permanent for the session.
+  // Only a real answer is cached; a miss is usually "not in Places yet".
   if (colour.chromatic || colour.neutral) {
     iconColours.set(url, colour);
     if (iconColours.size > ORIGIN_LIMIT * 2) {
@@ -448,14 +301,10 @@ async function accentFromIcon(url, browser) {
   return colour;
 }
 
-// Most frequent pixel is the wrong answer: it is the icon's paper or its ink on
-// almost every favicon. Score chromatic pixels only, bucket them so near-identical
-// shades reinforce each other, and weight by saturation so a small vivid mark
-// beats a large dull field.
+// Chromatic pixels bucketed by hue, scored by count and saturation, the
+// winner's mean. `neutral` is the mean of every opaque pixel.
 function dominantColour(data) {
   const buckets = new Map();
-  // Every opaque pixel, chromatic or not, so a monochrome mark can still say
-  // "this site is dark" or "this site is light" when no other tier answers.
   const all = { n: 0, r: 0, g: 0, b: 0 };
 
   for (let i = 0; i < data.length; i += 4) {
@@ -503,42 +352,36 @@ function dominantColour(data) {
       best = bucket;
     }
   }
+
+  // anti-aliased edge pixels of a monochrome mark are not a colour
   if (best && best.s / best.n < ICON_MIN_MEAN_SATURATION) best = null;
 
   return {
-    // The bucket's mean, not its centre: the centre is a quantisation artefact.
     chromatic: best ? mean(best) : null,
     neutral: all.n ? mean(all) : null,
   };
 }
 
-// ---- normalisation --------------------------------------------------------
-
+// ---- normalisation. Clamp into the band, then push away from the text
+// colour until the worst-case composite (accent over scrim over the least
+// helpful page) clears MIN_CONTRAST at the end nearest the text.
 function normalise(rgb) {
   const dark = isDarkChrome();
   const text = textColour();
-
   let [h, s, l] = rgbToHsl(...rgb);
 
-  // Neutral in, neutral out. Clamping a grey up to SAT_MIN would invent a hue
-  // that is in no part of the source, and a monochrome site would come out
-  // tinted.
+  // neutral in, neutral out
   if (s >= NEUTRAL_BELOW) s = Math.min(SAT_MAX, Math.max(SAT_MIN, s));
 
   const [lo, hi] = dark ? L_DARK : L_LIGHT;
   l = Math.min(hi, Math.max(lo, l));
 
-  // Push away from the text until it is legible. Measured on the actual
-  // composite in its worst case: the accent over the scrim over the least
-  // helpful page the site could put behind it - a white page under dark chrome,
-  // a black one under light chrome.
   const worst = compose(
     dark ? [255, 255, 255] : [0, 0, 0],
     dark ? [0, 0, 0] : [255, 255, 255],
     SCRIM_ALPHA
   );
-  // The end nearest the text is the one that has to clear the floor, not the
-  // midpoint - the sheen puts one end above it either way.
+
   const nearText = dark ? SHEEN : -SHEEN;
   for (let i = 0; i < 20; i++) {
     const end = hslToRgb(h, s, Math.min(0.98, Math.max(0.03, l + nearText)));
@@ -548,7 +391,6 @@ function normalise(rgb) {
     l = dark ? Math.max(0.05, l - 0.02) : Math.min(0.97, l + 0.02);
   }
 
-  // Light falls from above, so the top end is the lighter one in both schemes.
   const end = offset => {
     const [r, g, b] = hslToRgb(h, s, Math.min(0.98, Math.max(0.03, l + offset)));
     return `rgba(${r}, ${g}, ${b}, ${ACCENT_ALPHA})`;
@@ -557,9 +399,9 @@ function normalise(rgb) {
   return { top: end(SHEEN), bottom: end(-SHEEN) };
 }
 
-// ---- applying -------------------------------------------------------------
-
-// `null` means no accent: both ends fade to transparent and the theme comes back.
+// ---- applying. null = no accent: both ends fade to transparent and the
+// theme comes back. The scrim is written here, not via light-dark(), which
+// would follow the chrome scheme rather than Zen's dark-mode decision.
 function apply(accent) {
   const top = accent?.top ?? "transparent";
   const bottom = accent?.bottom ?? "transparent";
@@ -569,30 +411,27 @@ function apply(accent) {
 
   root.style.setProperty(VAR_TOP, top);
   root.style.setProperty(VAR_BOTTOM, bottom);
-  // Written here rather than left to light-dark() in CSS, which would resolve
-  // against the chrome colour scheme and not against Zen's own dark-mode
-  // decision for the current theme.
+
   root.style.setProperty(
     VAR_SCRIM,
     accent
       ? isDarkChrome()
         ? `rgba(0, 0, 0, ${SCRIM_ALPHA})`
         : `rgba(255, 255, 255, ${SCRIM_ALPHA})`
-      : // Fades out with the accent, so the theme is not revealed through a
-        // scrim that is still darkening it.
+      :
+
         isDarkChrome()
         ? "rgba(0, 0, 0, 0)"
         : "rgba(255, 255, 255, 0)"
   );
 
   window.clearTimeout(fadeTimer);
+
+  // Attribute on at once (theme layer gone before the accent lands), off only
+  // after the fade.
   if (accent) {
-    // On immediately: the theme layer has to be gone before the accent arrives
-    // over it, or the two are briefly composited and the colour reads wrong.
     root.setAttribute(ATTR, "true");
   } else {
-    // Off only once the accent has finished fading, so the theme reappears
-    // under a colour that is already transparent rather than under a visible one.
     fadeTimer = window.setTimeout(
       () => root.removeAttribute(ATTR),
       FADE_MS + 40
@@ -600,14 +439,12 @@ function apply(accent) {
   }
 }
 
-// A source colour, or null for "no accent", to the sidebar.
 function show(source, why) {
   debug("show", why, source, "selected=" + (window.gBrowser?.selectedBrowser?.currentURI?.spec || "").slice(0, 50));
   apply(source ? normalise(source) : null);
 }
 
-// ---- per-tab state --------------------------------------------------------
-
+// ---- per-tab state
 function originOf(browser) {
   try {
     return browser?.currentURI?.prePath || null;
@@ -616,10 +453,8 @@ function originOf(browser) {
   }
 }
 
-// Zen's empty tab has nothing to take a colour from, and is the one case
-// decided at the selection itself. A bare about:blank in any other tab is a
-// document on its way to being replaced - a new tab opened on a link, a
-// browser re-created for a process switch - and is held, not decided.
+// Only Zen's empty tab is decided on selection. A bare about:blank elsewhere
+// is a document on its way to being replaced, and is held.
 function blank(tab) {
   return tab.hasAttribute("zen-empty-tab");
 }
@@ -627,23 +462,24 @@ function blank(tab) {
 function stateOf(tab) {
   let s = tabs.get(tab);
   if (!s) {
+    // epoch    bumped when a document commits; answers for an older one are dropped
+    // iconURL  the icon the page set; icon: its reading, undefined while decoding
+    // page     the actor's last report { themeColour, canvasColour, phase }
+    // loaded   top-level network stop seen, and when
+    // source   the rgb the accent derives from; null = no accent; undefined = undecided
+    // final    whether a later signal may still improve it; tier: which tier gave it
     s = {
-      // Bumped when a new document commits; answers for an older one are dropped.
       epoch: 0,
       origin: null,
-      // The icon the page has set, and what it decoded to. `undefined` while
-      // decoding, NO_ICON when it would not decode or is Zen's own.
+
       iconURL: null,
       icon: undefined,
-      // The actor's last report: { themeColour, canvasColour, phase }.
+
       page: null,
-      // Top-level network stop seen - tabbrowser's own moment of giving up on
-      // an icon that never came - and when.
+
       loaded: false,
       loadedAt: 0,
-      // The decision: the rgb the accent derives from, null for "no accent",
-      // undefined while there is none yet. `final` says whether a later signal
-      // may still improve it, `tier` which tier gave it.
+
       source: undefined,
       final: false,
       tier: null,
@@ -659,10 +495,7 @@ function selected(tab) {
   return tab === window.gBrowser?.selectedTab;
 }
 
-// Only a final answer is remembered. A miss usually means the icon has not
-// reached Places yet or the actor has not reported, and caching that made it
-// permanent for the origin - which is why one Claude domain took its colour and
-// the other never did.
+// Only final answers; a remembered miss would be permanent for the session.
 function remember(origin, source) {
   if (!origin || !source) return;
   byOrigin.delete(origin);
@@ -682,9 +515,8 @@ function sameSource(a, b) {
   return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 }
 
-// Whether an icon can still arrive for this document. Decoded, and it cannot;
-// otherwise the load has to be over, no icon may be in flight, and a short
-// grace has to have passed for one that started just before the end.
+// Whether an icon can still arrive: not once decoded, and not before the load
+// has stopped with no pendingicon and ICON_GRACE_MS gone by.
 function iconSettled(tab, s, now) {
   if (s.icon !== undefined) return true;
   if (!s.loaded) return false;
@@ -692,48 +524,43 @@ function iconSettled(tab, s, now) {
   return now - s.loadedAt >= ICON_GRACE_MS;
 }
 
-// The cascade, run against what is known so far. Returns null for "nothing to
-// say yet", otherwise { source, final }.
+// The cascade against what is known. null = not yet; else { source, final, tier }.
 function decide(tab, s) {
   const now = window.performance.now();
   const overdue = now - s.started > SETTLE_MAX_MS;
 
-  // Tier 1, the favicon. A chromatic one is the answer the moment it decodes;
-  // everything below waits until the icon question is settled.
+  // 1. favicon; everything below waits until the icon question is settled
   if (s.icon?.chromatic) return { source: s.icon.chromatic, final: true, tier: "icon" };
   if (!overdue && !iconSettled(tab, s, now)) return null;
 
-  // Tier 2, the site's own declaration.
+  // 2. theme-color
   const meta = usable(parseColour(s.page?.themeColour));
   if (meta) return { source: meta, final: true, tier: "theme-color" };
 
-  // Tier 3, the canvas. Trustworthy once the page has loaded and its
-  // stylesheets are in; before that it is a guess for the deadline only.
+  // 3. canvas, final once the stylesheets are in
   const settled = s.loaded || s.page?.phase === "load" || overdue;
   const canvas = usable(parseColour(s.page?.canvasColour));
   if (canvas) return { source: canvas, final: settled, tier: "canvas" };
 
-  // Tier 4, the monochrome reading of the icon.
+  // 4. monochrome favicon
   if (s.icon?.neutral) return { source: s.icon.neutral, final: true, tier: "icon-neutral" };
 
-  // Every tier declined. Final once the page has said its last word, so the
-  // theme comes back only for a page that really has no colour of its own.
+  // nothing, once the page has said its last word
   if (settled && (s.page || s.loaded || overdue)) {
     return { source: null, final: true, tier: "none" };
   }
   return null;
 }
 
-// Re-run the cascade for a tab and act on what changed.
+// Re-run the cascade and act on what changed.
 function evaluate(tab) {
   const s = tabs.get(tab);
   if (!s) return;
   const r = decide(tab, s);
   if (!r) return;
-  // A provisional answer never replaces a final one, and a final one that is
-  // the same answer again is a no-op. A brand colour taken from the favicon
-  // is not given up either: a site that sets a second icon - a light and a
-  // dark variant - would otherwise flip to its theme-color a frame later.
+
+  // Provisional never replaces final; a chromatic-icon final is never demoted
+  // by a later non-icon answer (a site setting a second, neutral icon).
   if (!r.final && s.final) return;
   if (s.final && sameSource(r.source, s.source)) return;
   if (s.final && s.tier === "icon" && r.tier !== "icon") return;
@@ -760,10 +587,8 @@ function evaluate(tab) {
   if (selected(tab)) show(r.source, "decide/" + r.tier);
 }
 
-// A new document has committed in this tab. Everything known is about the old
-// one; start over, and paint what can be known now: nothing for a blank page,
-// the origin's remembered colour for a site seen before, and otherwise the
-// previous colour holds until decide() has an answer.
+// A new document committed: start over. A known origin is shown at once;
+// otherwise the previous colour holds until decide() answers.
 function begin(tab, browser) {
   const s = stateOf(tab);
   s.epoch++;
@@ -790,6 +615,8 @@ function begin(tab, browser) {
   if (selected(tab) && byOrigin.has(s.origin)) show(byOrigin.get(s.origin), "begin/origin");
 
   const epoch = s.epoch;
+
+  // the deadline for a page that never settles
   s.timer = window.setTimeout(() => {
     if (s.epoch !== epoch) return;
     s.timer = null;
@@ -797,8 +624,8 @@ function begin(tab, browser) {
   }, SETTLE_MAX_MS + 20);
 }
 
-// A tab that was open before this ran - or before the listener attached - has
-// no epoch of its own. Read what tabbrowser already knows about it.
+// A tab seen before any navigation of its own - restored, or open before the
+// listener attached: read what tabbrowser already knows.
 function seed(tab, browser) {
   const s = stateOf(tab);
   if (s.started) return s;
@@ -809,13 +636,13 @@ function seed(tab, browser) {
     s.final = true;
     return s;
   }
-  // A tab sitting at about:blank is on its way somewhere - a new tab opened on
-  // a link has not committed its document yet. There is nothing to read and
-  // nothing to decide; begin() takes over when the page arrives.
+
   let spec = "";
   try {
     spec = browser.currentURI.spec;
   } catch (e) {}
+
+  // on its way somewhere; begin() takes over when the page commits
   if (spec === "about:blank") {
     debug("seed", "about:blank held");
     return s;
@@ -826,8 +653,7 @@ function seed(tab, browser) {
   debug("seed", s.origin, "loaded=" + s.loaded, "icon=" + (icon ? icon.slice(0, 40) : "none"));
   if (icon) takeIcon(tab, browser, icon);
   query(tab, browser);
-  // A page with no icon at all is only decided once the grace has passed, and
-  // nothing else may come along to ask.
+
   const epoch = s.epoch;
   window.setTimeout(() => {
     if (s.epoch !== epoch) return;
@@ -851,8 +677,8 @@ function takeIcon(tab, browser, url) {
         if (stale()) return;
         s.icon = colour;
         evaluate(tab);
-        // Set, but would not decode: one look back for an icon still on its
-        // way to Places.
+
+        // would not decode: one look back for an icon not yet in Places
         if (attempt === 0 && !colour.chromatic && !colour.neutral) {
           window.setTimeout(() => {
             if (stale()) return;
@@ -872,8 +698,7 @@ function actorFor(browser) {
   }
 }
 
-// Ask the page what it has, for a document whose reports were sent before
-// this window was listening.
+// Ask the page, for a document whose reports went out before this window listened.
 function query(tab, browser) {
   const actor = actorFor(browser);
   if (!actor) return;
@@ -889,8 +714,7 @@ function query(tab, browser) {
     .catch(() => {});
 }
 
-// The selected tab changed: paint what is known about it, and go looking for
-// anything that is not.
+// Selected tab changed: show what is known, go looking for what is not.
 function present() {
   const tab = window.gBrowser.selectedTab;
   const browser = window.gBrowser.selectedBrowser;
@@ -901,13 +725,11 @@ function present() {
   } else if (byOrigin.has(s.origin)) {
     show(byOrigin.get(s.origin), "select/origin");
   }
-  // Otherwise the previous colour holds; the signals for this tab are already
-  // in flight, or seed() has just requested them.
+
   evaluate(tab);
 }
 
-// ---- events ---------------------------------------------------------------
-
+// ---- events
 function onTabSelect() {
   present();
 }
@@ -923,6 +745,11 @@ function onAccent(event) {
   evaluate(tab);
 }
 
+// onLocationChange: every navigation passes through an about:blank - a new
+// browser's initial document, a process switch - and none is a page.
+// onStateChange: the top-level network stop, where tabbrowser itself gives
+// up on an icon. onLinkIconAvailable: fires on every setIcon, changed or not,
+// unlike TabAttrModified, which is silent when the same icon is set again.
 const progressListener = {
   QueryInterface: ChromeUtils.generateQI([
     "nsIWebProgressListener",
@@ -933,17 +760,14 @@ const progressListener = {
     if (flags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT) return;
     const tab = window.gBrowser.getTabForBrowser?.(browser);
     if (!tab) return;
-    // Every navigation passes through an about:blank - the initial document of
-    // a new browser, and again when a process switch re-creates the browser -
-    // and none of them is a page. Only Zen's own empty tab is one to show.
+
     if (location?.spec === "about:blank" && !tab.hasAttribute("zen-empty-tab")) {
       return;
     }
     debug("navigate", location?.spec?.slice(0, 60));
     begin(tab, browser);
   },
-  // The end of the top-level load: if no icon has arrived by now, none will,
-  // and tabbrowser clears the attribute on the same signal.
+
   onStateChange(browser, webProgress, request, flags) {
     const L = Ci.nsIWebProgressListener;
     if (!(flags & L.STATE_STOP) || !(flags & L.STATE_IS_NETWORK)) return;
@@ -956,15 +780,14 @@ const progressListener = {
     s.loaded = true;
     s.loadedAt = window.performance.now();
     evaluate(tab);
-    // The grace for a straggling icon, then the lower tiers may decide.
+
     const epoch = s.epoch;
     window.setTimeout(() => {
       if (s.epoch !== epoch) return;
       evaluate(tab);
     }, ICON_GRACE_MS + 20);
   },
-  // Fires on every setIcon, whether or not the tab's attribute changed - the
-  // one signal that says "the new document has an icon, and it is this".
+
   onLinkIconAvailable(browser, iconURL) {
     if (!iconURL) return;
     const tab = window.gBrowser.getTabForBrowser?.(browser);
@@ -975,9 +798,7 @@ const progressListener = {
   },
 };
 
-// The band the accent is normalised into follows Zen's own dark-mode decision,
-// which a workspace theme can flip without the system scheme moving. Sources
-// are kept raw, so this is a re-normalisation, not a re-read.
+// Zen's own dark-mode decision can flip per workspace: re-normalise, no re-read.
 function onSchemeChange() {
   last = "";
   const tab = window.gBrowser?.selectedTab;
@@ -991,12 +812,10 @@ function onSchemeChange() {
 
 const scheme = window.matchMedia("(prefers-color-scheme: dark)");
 
-// ---- lifecycle ------------------------------------------------------------
-
+// ---- lifecycle
 function registerActor() {
-  // Once per process, and this script runs once per window, so re-registering
-  // throws for every window after the first and for every mod reload.
   try {
+    // once per process: re-registering throws (second window, mod reload)
     ChromeUtils.unregisterWindowActor(ACTOR);
   } catch (e) {}
 
@@ -1015,8 +834,8 @@ function registerActor() {
       },
       allFrames: false,
       messageManagerGroups: ["browsers"],
-      // Without this the actor is never created in an untrusted web content
-      // process - which is every ordinary site - and it fails silently.
+
+      // without this the actor never exists on an ordinary site
       safeForUntrustedWebProcess: true,
     });
     return true;

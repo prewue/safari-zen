@@ -1,30 +1,23 @@
-/* Safari-like Zen Layout — chrome tweaks
-   Pairs with window-radius.uc.mjs, which sets the native macOS window
-   corner radius to 26 (the Tahoe system default). */
+/* Safari-like Zen - chrome tweaks. Section numbers are the ones DEV.md cites. */
 
-/* 1. Outer padding of the sidebar from the window edge.
-   Zen insets the panel by half of this on every outer side (see section 10 and
-   zen-compact-mode.css:137-141), so 14px is a 7px gap between the window edge
-   and the panel. The selector carries :root on purpose: a userChrome.css that
-   sets the same variable on #navigator-toolbox is a user sheet too, and with
-   both !important only specificity decides. */
+/* 1. Gap between the window edge and the sidebar panel. Zen insets the panel by
+   half of this on the outer sides, so 14px is a 7px gap. :root on the selector
+   outranks a userChrome.css setting the same variable (DEV.md §8). */
 @media -moz-pref("mod.safari.sidebar-float") {
   :root #navigator-toolbox {
     --zen-compact-float: 14px !important;
   }
 }
 
-/* 2. Sidebar corner radius. Zen's panel radius is this minus half the content
-   separation (zen-theme.css:269-276), which with flush content is this. */
+/* 2. Panel corner radius: Zen's inner radius is this minus half the content
+   separation, which with flush content is this. */
 @media -moz-pref("mod.safari.sidebar-radius") {
   :root {
     --zen-border-radius: 24px !important;
   }
 }
 
-/* 3. Padding inside the sidebar.
-   Same selector Zen uses for the compact-mode titlebar, with explicit
-   per-side values instead of the uniform var(--zen-toolbox-padding). */
+/* 3. Inner padding, compact: Zen's own titlebar selector, per-side values. */
 @media -moz-pref("mod.safari.sidebar-padding") {
   :root[zen-compact-mode="true"]:not([customizing]):not([inDOMFullscreen="true"]) {
     @media -moz-pref("zen.view.compact.hide-tabbar") or -moz-pref("zen.view.use-single-toolbar") {
@@ -37,14 +30,8 @@
   }
 }
 
-/* 3b. The same inner padding, for the pinned sidebar.
-   Section 3 is nailed to :root[zen-compact-mode="true"], and it targets
-   #titlebar because that is the box compact's panel covers. Pinned, the panel
-   is inset inside the toolbox instead (see section 10), so the same values go
-   on #navigator-toolbox — on top of the gap, which is padding here too.
-   Collapsed is left out on purpose: compact drops the horizontal padding
-   there, and section 10 handles it. */
-
+/* 3b. The same inner padding pinned, on the toolbox, on top of the gap that
+   section 10 makes padding. Collapsed is section 10's. */
 @media -moz-pref("mod.safari.sidebar-padding") and -moz-pref("mod.safari.pinned-panel") {
   :root:is(:not([zen-compact-mode="true"]), [zen-compact-animating]):not([customizing]):not([inDOMFullscreen="true"]) {
     & #navigator-toolbox[zen-sidebar-expanded="true"] {
@@ -54,7 +41,6 @@
         calc(var(--safari-pin-gap) + 8px)
         calc(var(--safari-pin-gap) + 8px) !important;
 
-      /* Matches section 10: no outer gap on the side the page is on. */
       padding-inline-end: 8px !important;
 
       :root[zen-right-side="true"] & {
@@ -65,43 +51,19 @@
   }
 }
 
-/* 4. Translucent sidebar.
-   The switch itself is Zen's own `zen.theme.acrylic-elements`, exposed in this
-   mod's settings — see the README for what it does. This block only retunes the
-   filter Zen applies, it does not create the transparency. */
-
+/* 4. Zen's acrylic filter without its brightness(0.25), a dark-mode hardcode
+   (DEV.md §2). The transparency itself is Zen's own pref. */
 @media -moz-pref("zen.theme.acrylic-elements") and -moz-pref("mod.safari.acrylic-tune") {
   #zen-toolbar-background {
-    /* Zen ships:
-         blur(42px) saturate(110%) brightness(0.25) contrast(100%)
-       That brightness is a dark-mode hardcode — in light mode it crushes the
-       sidebar to near-black. Rebuild the filter without it. */
     backdrop-filter:
       blur(24px)
       saturate(150%) !important;
   }
 }
 
-/* 5. Sidebar reveal animation.
-   Deliberately asymmetric: opening gets a light spring, closing does not.
-   A panel that bounces on the way out reads as a toy, not as polish.
-
-   The open curve is the step response of a damped harmonic oscillator
-   (damping ratio 0.76, response 0.32s), sampled into linear(). It overshoots
-   2.54% — about 8px on a 317px slide — peaking at 54% of the transition, then
-   settles to within 0.33px of the target, so there is no snap at the end.
-   Zen's stock curve overshoots only 0.34%, which reads as flat.
-
-   Closing is 0.30s on cubic-bezier(0.45, 0, 0.7, 0.55) — an ease-in, so the
-   panel releases gently and builds speed on the way out, covering 6% / 27% /
-   61% of the travel at a quarter, half and three quarters of the transition.
-   It is still moving when it clips past the window edge, which is what reads
-   as "sweeping away" rather than "snapping shut". No overshoot: a panel that
-   bounces on exit reads as a toy.
-
-   Everything here is scoped to compact mode: these are the rules that slide
-   the panel in and out, and the pinned layout in section 10 never moves. */
-
+/* 5. Sidebar reveal, compact only: a damped-spring open (linear() sampled from
+   a damping ratio of 0.76) and an ease-in close, with the companions Zen syncs
+   by hand retimed alongside. DEV.md §4. */
 @media -moz-pref("mod.safari.sidebar-animation") {
   :root {
     --safari-open-time: 0.46s;
@@ -122,8 +84,8 @@
 
   }
 
-  /* Closing. Lower specificity than the opening rule below, so that one wins
-     while the sidebar is revealed. */
+  /* Closing. Lower specificity than the opening rule, so that one wins while
+       the sidebar is revealed. */
   :root[zen-compact-mode="true"] #navigator-toolbox:not([animate="true"]) {
     transition:
       left var(--safari-close-time) var(--safari-close-ease),
@@ -131,31 +93,26 @@
       visibility var(--safari-close-time) var(--safari-close-ease) !important;
   }
 
-  /* Zen keeps companion elements in sync with the toolbox by hand — see
-     "Same as the toolbox" on #titlebar in zen-compact-mode.css. Lengthening
-     the close without moving those desynchronises them: the panel is still
-     sliding while its contents blank out at 0.15s. Move them too — both
-     follow --safari-close-time, so retiming the close retimes everything. */
   :root[zen-compact-mode="true"] #navigator-toolbox:not([animate="true"]):not(:is(
       [zen-has-hover], [zen-user-show], [zen-has-empty-tab], [flash-popup],
       [has-popup-menu], [movingtab], [zen-compact-mode-active]
+
+    /* #titlebar and the hidden-toolbar duration follow the close, or the contents
+         blank out mid-slide. */
     )) #titlebar {
-    /* Outranks any shorter rule on #titlebar, so the whole list belongs
-       here - anything declared separately elsewhere gets dropped. */
     transition:
       visibility var(--safari-close-time) var(--safari-close-ease) !important;
   }
 
-  /* The variable Zen uses for the rest of the hidden-toolbar timings. */
   :root {
     --zen-hidden-toolbar-transition-duration: var(--safari-close-time) !important;
   }
 
-  /* Opening. Same trigger set Zen uses; visibility is intentionally left out
-     so the panel is on screen for the whole slide. */
   :root[zen-compact-mode="true"] #navigator-toolbox:is(
       [zen-has-hover], [zen-user-show], [zen-has-empty-tab], [flash-popup],
       [has-popup-menu], [movingtab], [zen-compact-mode-active]
+
+    /* Opening. visibility is left out so the panel is on screen for the whole slide. */
     ):not([animate="true"]) {
     transition:
       left var(--safari-open-time) var(--safari-open-ease),
@@ -177,26 +134,11 @@
   }
 }
 
-/* 6. Search field.
-   Values come from the ZenSidebar design and were verified by sampling the
-   exported PNG, so they are the design's numbers rather than eyeballed ones,
-   each since lowered by two points:
-
-     edge gradient    left 15% -> 8% at 50% -> right 25%   (horizontal)
-     fill             top 5.1% -> bottom 10.2%             (vertical)
-     dark inner glow  0 -4px 8px white 5%
-     light drop shad. 0 4px 7px black 5.9%
-
-   The stroke is outer-aligned in the design, so it is drawn by an ::after at
-   inset -1px rather than a border, which would change the field's metrics.
-   ::before is already taken here by Zen (smartbar.css:80). Light and dark
-   switch through light-dark() alone, the mechanism Zen uses throughout its own
-   stylesheets. */
-
+/* 6. Liquid glass search field: gradient fill, a 1px outer gradient stroke drawn
+   by ::after (::before is Zen's), an inner glow in dark and a drop shadow in
+   light. The numbers are the ZenSidebar design's. DEV.md §11. */
 @media -moz-pref("mod.safari.glass-controls") {
   :root {
-    /* Light mode has no gradient on the stroke in the design, so its three
-       stops are simply identical. */
     --safari-edge: linear-gradient(
       to right,
       light-dark(rgba(0, 0, 0, 0.102), rgba(255, 255, 255, 0.15)) 0%,
@@ -205,7 +147,6 @@
     );
   }
 
-  /* The outer 1px stroke. */
   #urlbar:not([breakout-extend]) > .urlbar-background::after {
     content: "";
     position: absolute;
@@ -221,9 +162,6 @@
     pointer-events: none;
   }
 
-  /* Both shadows are declared at once and the one that does not belong to the
-     current scheme is made transparent, because `inset` itself cannot be
-     switched by light-dark(). */
   #urlbar:not([breakout-extend]) > .urlbar-background {
     background: linear-gradient(
       to bottom,
@@ -236,31 +174,11 @@
   }
 }
 
-/* 7. Tab hover.
-   Two parts of one event, on one timing so they read as a single response.
-
-   The tab's own background has no transition at all — neither Zen nor Firefox
-   declares one, so `--tab-background-color-hover` (tabs.css:916) and the
-   selected colour both snap in. `outline-color` rides along because Firefox
-   switches it on hover too, and letting it lag would split the edge from the
-   fill.
-
-   The buttons are the harder half: Zen reveals them with `display` alone
-   (vertical-tabs.css:672-681 and :902-906), which normally cannot animate.
-   `transition-behavior: allow-discrete` keeps the element displayed for the
-   duration so it can fade out first, and `@starting-style` gives it a state
-   to animate from on the way in. Firefox ships both in its own chrome CSS
-   (tabs.css:1127, fullscreen-and-pointerlock.css:67), so they are available.
-
-   The two hidden-state selectors below are exact complements of Zen's own
-   reveal conditions — close on `:hover` or `[multiselected][selected]`, reset
-   on `:hover` or `[visuallyselected]` — so no button that Zen keeps visible
-   can end up faded out. */
-
+/* 7. Tab hover: background and the close/reset buttons fade on one timing.
+   display animates through allow-discrete and @starting-style; the hidden
+   selectors are the complements of Zen's own reveal conditions. DEV.md §11. */
 @media -moz-pref("mod.safari.tab-hover") {
   :root {
-    /* Long enough to read as a fade, short enough that running the pointer
-       down a list of tabs does not leave a smear behind it. */
     --safari-tabhover-time: 0.2s;
     --safari-tabbtn-blur: 4px;
   }
@@ -298,33 +216,9 @@
   }
 }
 
-/* 8. Space switching.
-   The blur follows the swipe rather than being triggered by it. Zen never
-   publishes how far the gesture has travelled - _handleSwipeUpdate computes
-   the offset and passes it straight to _organizeWorkspaceStripLocations - so
-   folder-motion.uc.mjs wraps that method and writes the normalised distance to
-   --safari-space-progress.
-
-   Everything driven off the attributes alone flickered, and for good reason:
-   `swipe-gesture` goes up the moment the fingers land and stays up for the
-   whole drag, while `animating-background` covers only the tail. Neither
-   describes how far you have actually pulled.
-
-   Only the space you are leaving blurs. `[active]` is the right discriminator
-   because Zen only flips it once the change actually commits
-   (ZenSpace.mjs:308), so for the whole gesture it still marks the source and
-   the space arriving is never touched.
-
-   The blur transition is itself a variable. While a finger is driving it the
-   script holds --safari-space-track at 0s, so the blur is locked to the
-   movement rather than lagging behind it. The moment the change commits, or
-   the gesture ends, the script zeroes the progress and raises the track to a
-   real duration, so the settle is eased instead of snapped.
-
-   That commit-time reset matters: `active` moves to the new space while
-   `swipe-gesture` is still up, so without it the space already in view would
-   match the outgoing rule and sit there holding the last progress value. */
-
+/* 8. Space switching: the blur follows --safari-space-progress from
+   folder-motion.uc.mjs; only the space being left, still [active], blurs.
+   DEV.md §5. */
 @media -moz-pref("mod.safari.space-switch-blur") {
   :root {
     --safari-space-blur: 6px;
@@ -335,7 +229,6 @@
     transition: filter var(--safari-space-out) ease-out !important;
   }
 
-  /* Sharp at rest, blurring as you pull away from it. */
   :root[swipe-gesture] #tabbrowser-tabs zen-workspace[active] {
     filter: blur(calc(var(--safari-space-progress, 0) * var(--safari-space-blur)));
     transition: filter var(--safari-space-track, 0s) linear !important;
@@ -350,19 +243,8 @@
   }
 }
 
-/* 9. Folder and space chevron timing.
-   Zen runs three different timings for what is one gesture: folder contents
-   0.12s easeInOut from JS (ZenFolders.mjs:1467/1537), the folder icon 0.3s
-   from CSS (zen-folders.css:120), the space chevron 0.1s
-   (zen-workspaces.css:695). The icon finishing 2.5x after the thing it
-   represents is the most visible part of it.
-
-   folder-motion.uc.mjs computes one duration per gesture, scaled by how much
-   content is actually moving, and publishes it plus the easing as
-   --safari-folder-time / --safari-folder-ease. Everything below rides those,
-   so icon, chevron and content start and land together. The fallbacks apply
-   only if the script has not run yet. */
-
+/* 9. Folder icon and space chevron ride --safari-folder-time / -ease from
+   folder-motion.uc.mjs, so icon, chevron and contents move as one. DEV.md §5. */
 @media -moz-pref("mod.safari.folder-motion") {
   zen-folder .tab-group-folder-icon svg *,
   zen-folder svg * {
@@ -385,67 +267,27 @@
   }
 }
 
-/* 10. Pinned sidebar, wearing the compact panel.
-   Compact mode looks the way it does because of one element: #zen-toolbar-background,
-   the first child of #titlebar (browser.xhtml:6518). Everything that makes it a
-   panel — the fill, the acrylic backdrop-filter, box-shadow: var(--zen-big-shadow),
-   the radius, and the theme gradient painted on ::before/::after — is declared at
-   the top level of zen-compact-mode.css:8-34, outside any compact-mode selector.
-   The only thing keeping it off screen the rest of the time is `display: none` on
-   line 9. Compact turns it on with a single declaration at line 203.
-
-   ZenGradientGenerator.mjs:1730 writes --zen-main-browser-background-toolbar to
-   that element unconditionally, not just in compact mode, so the layer is already
-   painted and current when the sidebar is pinned — it is simply not displayed.
-
-   So this section does not rebuild the panel. It shows the one Zen already has,
-   and reproduces compact's geometry and backdrop around it. */
-
+/* 10. Pinned sidebar wearing compact's panel: show #zen-toolbar-background,
+   position the toolbox, make the gap padding and paint it, the content
+   placeholder and the container behind it with --safari-pin-canvas from
+   page-canvas.uc.mjs. DEV.md §8. */
 @media -moz-pref("mod.safari.pinned-panel") {
-  /* Kept applied while [zen-compact-animating] is up, even though compact mode
-     is technically already on by then: gZenCompactModeManager flips
-     zen-compact-mode before it starts animating, so dropping out here would
-     make the panel and the gap vanish a frame before the slide instead of
-     sliding away with it. Every compact rule that would fight this one is
-     itself behind :not([animate='true']), so during the handover only these
-     apply. Section 5's timings are untouched. */
+  /* Stays on through the compact toggle's animation so the panel slides away
+       with the sidebar; every compact rule that would collide is behind
+       :not([animate='true']). */
   :root:is(:not([zen-compact-mode="true"]), [zen-compact-animating]):not([customizing]):not([inDOMFullscreen="true"]) {
-
     & #navigator-toolbox {
-      /* Zen only declares --zen-compact-float inside compact mode
-         (zen-compact-mode.css:109 and :116). Both of its branches are repeated
-         below so that turning section 1 off leaves Zen's own spacing rather
-         than nothing at all; section 1's !important still wins when it is on. */
+      /* Zen's own two branches, so section 1 off leaves Zen's spacing. */
       --zen-compact-float: var(--zen-element-separation);
       --safari-pin-gap: calc(var(--zen-compact-float) / 2);
 
-      /* The panel is position: absolute; inset: 0, so it sizes to the padding
-         box of its nearest positioned ancestor. Positioning the toolbox rather
-         than #titlebar is what makes the panel cover the whole sidebar — the
-         window buttons and the urlbar included, since pinned they are siblings
-         of #titlebar rather than children of it.
-
-         z-index is not decoration here. The panel carries z-index: -1
-         (zen-compact-mode.css:13), which only means "behind the sidebar's own
-         content" if the sidebar is a stacking context; otherwise it falls behind
-         #zen-browser-background and disappears. Compact gets its context free
-         from `position: fixed; z-index: 10`.
-
-         Both need !important, and so does the display flip below: Sine loads
-         this file as a USER_SHEET, and a user-origin *normal* declaration loses
-         to any author one. Zen declares `position: inherit` on the toolbox and
-         `display: none` on the panel, so without it both are simply dropped. */
+      /* The panel is absolute, inset 0, z-index -1: it needs a positioned ancestor
+               and a stacking context. Sine's sheet is user-origin, so !important. */
       position: relative !important;
       z-index: 1 !important;
 
-      /* The gap is padding, not margin, so that the toolbox's own background
-         paints it — a margin would leave the workspace gradient showing through
-         and frame the panel in a colour compact never has behind it. The panel
-         is then inset back out of that padding below. */
+      /* Padding, not margin: the toolbox paints it. */
       padding: calc(var(--safari-pin-gap) + var(--zen-toolbox-padding)) !important;
-
-      /* No outer gap on the side the page is on - the panel runs straight up
-         to it. Inner spacing stays. */
       padding-inline-end: var(--zen-toolbox-padding) !important;
 
       :root[zen-right-side="true"] & {
@@ -453,46 +295,16 @@
         padding-inline-start: var(--zen-toolbox-padding) !important;
       }
 
-      /* What compact actually has behind its panel is the page, not the
-         gradient: with flush content the page card spans the whole window and
-         the panel floats on top of it. Reproduce that, so both the gap around
-         the panel and the panel's own backdrop-filter sample the same thing
-         they would in compact.
-
-         --safari-pin-canvas is the live colour of the current page, sampled by
-         page-canvas.uc.mjs. The fallbacks are the colours Zen paints content
-         with (zen-browser-container.css:16-18), used before the first sample
-         lands, on translucent pages, and if the script is not running at all.
-
-         The fallback pair is a media query rather than light-dark() on purpose:
-         light-dark() on a chrome element resolves against the *chrome* colour
-         scheme, so a light page under dark chrome would come out dark.
-         -moz-content-prefers-color-scheme is the content-side signal. */
+      /* Fallbacks are Zen's own content colours, by content scheme; light-dark()
+               would follow the chrome scheme. */
       background: var(--safari-pin-canvas, rgb(255, 255, 255)) !important;
 
       @media (-moz-content-prefers-color-scheme: dark) {
         background: var(--safari-pin-canvas, rgb(32, 32, 32)) !important;
       }
 
-      /* Nothing open — Zen's empty tab — has no page colour to match, and its
-         browser is one of the translucent ones showing the workspace gradient
-         straight through. So show the gradient in the gap as well, which is
-         also what compact would have behind the panel here.
-
-         Zen already publishes the state on :root (ZenSpaceManager's
-         #changeToEmptyTab), so this needs no sampling and lands in the same
-         frame as the tab change. The script arrives at `transparent` too when
-         it samples such a page; this is just the instant path.
-
-         Not fully transparent, though: Zen paints its translucent browsers with
-         a wash over the gradient rather than nothing at all
-         (zen-browser-container.css:19-21), so a bare `transparent` here comes
-         out visibly darker than the page beside it. Same wash, same values.
-
-         The ="true" is not optional. #changeToEmptyTab uses toggleAttribute on
-         the toolbox but plain setAttribute(name, isEmpty) on :root, so there
-         the attribute is always present and carries the string "false" when a
-         page is open — a bare [zen-has-empty-tab] matches every tab. */
+      /* Empty tab: Zen's wash over the gradient. The ="true" matters, the attribute
+               is always present. */
       :root[zen-has-empty-tab="true"] & {
         background: rgba(255, 255, 255, 0.6) !important;
 
@@ -501,8 +313,7 @@
         }
       }
 
-      /* Same radius compensation compact applies (zen-compact-mode.css:111-119).
-         Without it the corners land a couple of pixels off the hover panel's. */
+      /* compact's radius compensation */
       @media (-moz-mac-tahoe-theme) {
         --zen-compact-mode-no-padding-radius-fix: -2px;
       }
@@ -512,8 +323,7 @@
         --zen-compact-mode-no-padding-radius-fix: 2px;
       }
 
-      /* Collapsed, compact runs the rail with no inner horizontal padding at all
-         (zen-compact-mode.css:190) — a tab is already as wide as the rail. */
+      /* Collapsed rail: no inner horizontal padding, as compact. */
       &:not([zen-sidebar-expanded="true"]) {
         padding-inline: var(--safari-pin-gap) 0 !important;
 
@@ -522,8 +332,7 @@
         }
       }
 
-      /* Inset the panel back out of the gap. inset: 0 would have it cover the
-         padding too, since that is the padding box. */
+      /* Inset the panel out of the gap; inset: 0 would cover the padding box. */
       & #zen-toolbar-background {
         display: flex !important;
         inset: var(--safari-pin-gap) !important;
@@ -536,31 +345,9 @@
       }
     }
 
-    /* The page area itself, painted with the page colour too, so during a load
-       the whole window reads as one surface rather than a page-coloured gap
-       beside Zen's grey placeholder — the artefact where the gap took the new
-       colour a beat before the page arrived.
-
-       Zen paints a placeholder on the content browser before the page does
-       (zen-browser-container.css:16-22): an opaque light-dark(#fff, #202020) on
-       an ordinary browser, and on a [transparent="true"] one a white wash that
-       lets the workspace gradient through. Overriding both to
-       --safari-pin-canvas makes the placeholder the page's own colour, so
-       whatever shows before the page arrives — across a process switch, which
-       every cross-site navigation is — matches the gap beside it. Video, PDF
-       and image documents are untouched: only the flat colour shown before and
-       behind the page changes, and the page's own paint then covers it exactly,
-       since that surface is what the variable was sampled from.
-
-       The empty tab is left to Zen's wash, matching the gap's own empty-tab
-       branch above. That is keyed off :root's zen-has-empty-tab, not the
-       browser's [transparent="true"]: Zen sets `transparent` when a tab is
-       created empty and never clears it on navigation (tabbrowser.js:2960), so
-       a page opened from a new tab keeps it for life — and keying the
-       placeholder off it left exactly those tabs showing the gradient wash
-       beside a page-coloured gap while a site loaded. Same fallback pair and
-       the same content-scheme media query as the toolbox, so with the script
-       off the placeholder is byte-for-byte Zen's own. */
+    /* The placeholder behind the page while it loads, so the window is one surface.
+           Keyed off the empty tab, not the browser's [transparent], which Zen sets on a
+           tab created empty and never clears. */
     &:not([zen-has-empty-tab="true"]) browser[type="content"] {
       background-color: var(--safari-pin-canvas, rgb(255, 255, 255)) !important;
 
@@ -569,14 +356,7 @@
       }
     }
 
-    /* The surface actually shown in the content area during a load. Across a
-       process switch the new document has no layers yet and the <browser> paints
-       nothing - measured with a diagnostic fill, it is #tabbrowser-tabpanels, the
-       container behind the browser, that shows through, and Zen leaves it
-       transparent (zen-browser-ui.css:7-9) so what shows is a black/grey frame.
-       Painting it the page colour too keeps the whole window one surface until
-       the page arrives. Left clear on an empty tab, where the workspace gradient
-       is meant to show. */
+    /* What shows across a process switch, when the browser has no layers yet. */
     &:not([zen-has-empty-tab="true"]) #tabbrowser-tabpanels {
       background-color: var(--safari-pin-canvas, rgb(255, 255, 255)) !important;
 
@@ -585,14 +365,8 @@
       }
     }
 
-    /* #zen-sidebar-splitter is a real flex sibling of the toolbox, created in JS
-       (ZenCustomizableUI.sys.mjs:51-56) and --zen-toolbox-padding wide
-       (vertical-tabs.css:874-884). Left in flow it adds its own gap after the
-       one above, and that gap is outside the toolbox so nothing paints it.
-       Pulling it back over the toolbox by its own width takes it out of the
-       layout while leaving it exactly where the eye expects the resize handle
-       to be. Compact does not have this problem — it hides the splitter
-       (zen-compact-mode.css:65) and gives up resizing along with it. */
+    /* The splitter is a flex sibling; pull it over the toolbox so it adds no
+           second gap. */
     &:not([zen-right-side="true"]) #zen-sidebar-splitter {
       margin-inline-start: calc(-1 * var(--zen-toolbox-padding)) !important;
     }
@@ -603,42 +377,11 @@
   }
 }
 
-
-/* 11. Site accent colour.
-   The sidebar takes the colour of the site you are on, in compact mode and
-   pinned mode alike. site-accent.uc.mjs publishes two colours and one attribute,
-   and everything below is how they are composited.
-
-   Not by overwriting --zen-main-browser-background-toolbar. Zen rewrites that
-   inline on every workspace change, drag frame and swipe frame; its value is
-   often a linear-gradient, which cannot be transitioned; and replacing it kills
-   the workspace crossfade.
-
-   The accent is translucent, and it is NOT laid over the workspace theme. Those
-   are two separate things, and conflating them is what made an earlier version
-   come out muddy: a translucent accent stacked on a gradient shows the gradient
-   through it. So while :root carries [safari-accent], the theme layer is dropped
-   and what sits behind the accent is the panel's own backdrop-filter - the
-   colour stays true and the glass survives.
-
-   Two ends rather than one flat fill: a shallow vertical gradient in the site's
-   own hue, lighter at the top, which is the difference between "coloured" and
-   "finished".
-
-   background-blend-mode stays `normal` on our layers. The theme layers carry
-   `screen` (zen-browser-ui.css:66,79), which only ever lightens, and inheriting
-   it would wash the accent out.
-
-   Which element paints the sidebar depends on the mode. #zen-toolbar-background
-   is display: none outside compact mode (zen-compact-mode.css:9), lifted only
-   inside :root[zen-compact-mode='true'] - and by section 10 of this file. So it
-   covers compact and pinned-with-panel, and stock pinned falls to
-   #navigator-toolbox, whose --zen-navigator-toolbox-background hook Zen declares
-   and then never writes.
-
-   Tinting #zen-browser-background instead would be wrong: that element spans the
-   whole window, not the sidebar. */
-
+/* 11. Site accent: two ends and a scrim, registered so they transition, and
+   transitioned on :root, where the script writes them - a registered property
+   animates on the element whose value changes. With [safari-accent] the theme
+   layer is dropped so the accent's translucency shows the blur, not the
+   gradient. Blend mode stays normal; Zen's screen would wash it out. DEV.md §9. */
 @property --safari-accent-top {
   syntax: "<color>";
   inherits: true;
@@ -658,15 +401,7 @@
 }
 
 @media -moz-pref("mod.safari.site-accent") {
-  /* The transition lives here, on the element the script actually writes to.
-     A registered custom property animates on the element whose value changes;
-     a descendant that merely inherits it gets the new value outright, however
-     many transitions are declared on the descendant. Declaring it on the
-     pseudo-elements looked right and did nothing - the colour jumped on every
-     tab switch. :root animates, and everything below inherits a value that is
-     already moving. */
   :root {
-    /* Keep FADE_MS in site-accent.uc.mjs in step with this. */
     --safari-accent-time: 0.5s;
     --safari-accent-ease: cubic-bezier(0.4, 0, 0.2, 1);
     --safari-accent-fill: linear-gradient(
@@ -681,8 +416,8 @@
       --safari-accent-scrim var(--safari-accent-time) var(--safari-accent-ease) !important;
   }
 
-  /* Compact, and pinned once section 10 has shown the panel. */
   #zen-toolbar-background {
+    /* Compact, and pinned with the panel. */
     &::after {
       background: var(--safari-accent-fill), var(--zen-main-browser-background-toolbar) !important;
       background-blend-mode: normal, screen !important;
@@ -693,11 +428,7 @@
       background-blend-mode: normal, screen !important;
     }
 
-    /* An accent is showing: drop the theme from underneath it, so the accent's
-       own translucency reveals the blur rather than the workspace gradient, and
-       put a scrim between the two. Without the scrim the accent is at the mercy
-       of the page behind it - the same blue reads 7.7:1 against white labels
-       over a dark site and 2.9:1 over a white one. */
+    /* An accent is showing: drop the theme, keep the scrim. */
     :root[safari-accent] & {
       &::after,
       &::before {
@@ -709,8 +440,7 @@
     }
   }
 
-  /* Stock pinned: no panel is displayed, so the toolbox itself carries it.
-     Excluded when section 10 is on, where the panel above is already handled. */
+  /* Stock pinned: no panel, the toolbox carries it. */
   @media not -moz-pref("mod.safari.pinned-panel") {
     :root:not([zen-compact-mode="true"]) #navigator-toolbox {
       background: var(--safari-accent-fill) !important;
