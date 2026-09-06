@@ -46,6 +46,16 @@ if (Services.appinfo.OS === "Darwin") {
     console.log(
       `[Safari-like Zen] window radius ${enabled ? "set to " + RADIUS : "reset to the macOS default"}`
     );
+
+    // chrome.css section 2 rounds the sidebar panel concentrically with this
+    const root = document.documentElement;
+    if (enabled) {
+      root.style.setProperty("--safari-window-radius", RADIUS + "px");
+      root.setAttribute("safari-window-radius", RADIUS);
+    } else {
+      root.style.removeProperty("--safari-window-radius");
+      root.removeAttribute("safari-window-radius");
+    }
   } catch (e) {
     console.error("[Safari-like Zen] window radius failed:", e);
   }

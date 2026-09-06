@@ -9,11 +9,23 @@
   }
 }
 
-/* 2. Panel corner radius: Zen's inner radius is this minus half the content
-   separation, which with flush content is this. */
+/* 2. Corners. With the native window radius on (window-radius.uc.mjs publishes
+   it as --safari-window-radius) the panel's corner is concentric with the
+   window's: Apple's continuous curve, at the window radius minus the gap
+   (DEV.md §1 and §8). --zen-border-radius stays for everything else Zen rounds
+   with it, and is the panel's radius where there is no native window radius. */
 @media -moz-pref("mod.safari.sidebar-radius") {
   :root {
     --zen-border-radius: 24px !important;
+  }
+
+  :root[safari-window-radius] #zen-toolbar-background {
+    &,
+    &::before,
+    &::after {
+      corner-shape: superellipse(1.744) !important;
+      border-radius: calc((var(--safari-window-radius) - var(--zen-compact-float) / 2) * 1.528665) !important;
+    }
   }
 }
 

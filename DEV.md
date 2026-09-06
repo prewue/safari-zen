@@ -536,12 +536,36 @@ there, with only its inner spacing left — so `inset-inline-end` goes to 0 and 
 padding on that side carries the inner value alone. Both flip for a right-hand sidebar.
 
 The numbers: section 1 sets `--zen-compact-float` to 14px, so the gap on the outer sides
-is 7px in both modes, and section 2 sets `--zen-border-radius` to 24px, which with flush
-content is the panel radius (`zen-theme.css:269-276` subtracts half the separation, 0.1px
-here; the Tahoe/no-padding radius fix then takes 2px off the panel itself). Both were
-22px / 20px until the second round asked for 4px more gap and 4px more radius. Section 1's selector carries `:root` because a `userChrome.css` in the profile
-sets the same variable on `#navigator-toolbox` with `!important`, is a user sheet just
-like Sine's, and with equal origin and importance only specificity decides.
+is 7px in both modes (22px until the second round asked for 4px less). Section 1's
+selector carries `:root` because a `userChrome.css` in the profile sets the same
+variable on `#navigator-toolbox` with `!important`, is a user sheet just like Sine's, and
+with equal origin and importance only specificity decides.
+
+### The panel's corner follows the window's
+
+A panel with a circular 22px corner inside a window with Apple's continuous 26px corner
+and a 7px gap is not concentric: along the diagonal the gap grows to 8–10px and the two
+curves are visibly different shapes. The fix is the one Apple uses for nested continuous
+corners — the same curve family, at the outer radius minus the inset:
+
+```css
+:root[safari-window-radius] #zen-toolbar-background, &::before, &::after {
+  corner-shape: superellipse(1.744);
+  border-radius: calc((var(--safari-window-radius) - var(--zen-compact-float) / 2) * 1.528665);
+}
+```
+
+`window-radius.uc.mjs` publishes the radius it sets as `--safari-window-radius` and the
+attribute that gates the rule, so a build with no native radius (any other platform, or
+the toggle off) keeps Zen's own panel radius. `superellipse(1.744)` and the `1.528665`
+factor are the fit from §1: a CSS superellipse spans exactly its radius while Apple's
+curve spans 1.53×, so a nominal 19px continuous corner is `border-radius: 29px` with that
+shape — verified in the computed style (`29.0446px`, `superellipse(1.744)` on the panel
+and both pseudo-elements). `layout.css.corner-shape.enabled` is `true` by default in this
+build (`greprefs.js:1607`), so no pref is touched. Zen's own
+`--zen-compact-mode-no-padding-radius-fix` no longer applies to the panel; it compensated
+compact's panel against the page card, which the concentric formula makes moot.
+`--zen-border-radius` (section 2, 24px) stays for everything else Zen rounds with it.
 
 Otherwise the gap is padding, the toolbox paints it, and the panel is inset back out
 of it:

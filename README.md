@@ -42,7 +42,8 @@ tab hover and reveal animation — but these do not:
 
 - **Native window corners.** macOS's own window shape, like every native app.
 - **Floating translucent sidebar.** Zen's translucency with a softer blur, a
-  7px float from the window edge and a 24px corner radius.
+  7px float from the window edge, and corners that follow the window's own
+  curve concentrically.
 - **Pinned sidebar with the compact panel.** With compact mode off, the
   sidebar keeps compact's floating panel but stays put, the page sits beside
   it, and the gap around the panel takes the page's own background colour.
@@ -61,8 +62,8 @@ them — the native window corners and the native translucent sidebar — need a
 full restart (**⌘Q**) after changing.
 
 To change the window corner radius, edit `RADIUS` in `window-radius.uc.mjs`
-(26 is the macOS default; 20, 15 and 10 also look right). The sidebar's float
-and radius are the first two rules in `chrome.css`.
+(26 is the macOS default; 20, 15 and 10 also look right); the sidebar's corners
+follow it. The sidebar's float is the first rule in `chrome.css`.
 
 ## Uninstall
 
